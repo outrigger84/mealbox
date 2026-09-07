@@ -39,7 +39,7 @@ export default function Home() {
   if (isLoading) return <p className="text-muted-foreground">Loading…</p>
   if (!data) return null
 
-  const { delivery, orderNeed, expiryWarnings, pendingReceipts, freezerCandidates, unallocatedFreezerPool, needFreezingCount } = data
+  const { delivery, orderNeed, expiryWarnings, pendingReceipts, pendingOrder, freezerCandidates, unallocatedFreezerPool, needFreezingCount } = data
 
   return (
     <div className="space-y-4 max-w-2xl">
@@ -56,19 +56,25 @@ export default function Home() {
         </Link>
       )}
 
-      <div className={cn('rounded-lg border p-4', STATUS_STYLE[delivery.status])}>
+      <div className={cn('rounded-lg border p-4', pendingOrder ? STATUS_STYLE.ok : STATUS_STYLE[delivery.status])}>
         <div className="flex items-center gap-2 font-semibold">
           <PackageCheck className="w-5 h-5" />
-          {STATUS_LABEL[delivery.status]}
+          {pendingOrder ? 'Order placed' : STATUS_LABEL[delivery.status]}
         </div>
         <p className="mt-1 text-sm">
-          Next delivery <strong>{formatDisplay(delivery.nextDeliveryDate)}</strong> — order by{' '}
-          <strong>{formatDisplay(delivery.orderByDate)}</strong> ({delivery.daysUntilOrderBy <= 0 ? 'today or overdue' : `${delivery.daysUntilOrderBy} day${delivery.daysUntilOrderBy === 1 ? '' : 's'} left`})
+          Next delivery <strong>{formatDisplay(delivery.nextDeliveryDate)}</strong>
+          {pendingOrder ? (
+            <> — {pendingOrder.planned_qty} meal{pendingOrder.planned_qty === 1 ? '' : 's'} logged, awaiting delivery.</>
+          ) : (
+            <>
+              {' '}— order by <strong>{formatDisplay(delivery.orderByDate)}</strong> ({delivery.daysUntilOrderBy <= 0 ? 'today or overdue' : `${delivery.daysUntilOrderBy} day${delivery.daysUntilOrderBy === 1 ? '' : 's'} left`})
+            </>
+          )}
         </p>
         <p className="mt-2 text-sm">
           You have <strong>{orderNeed.stockAvailable}</strong> meal{orderNeed.stockAvailable === 1 ? '' : 's'} in stock,
           need <strong>{orderNeed.eatingDaysUntilDelivery}</strong> before delivery.{' '}
-          {orderNeed.needToOrder ? (
+          {pendingOrder ? null : orderNeed.needToOrder ? (
             <>Suggest ordering around <strong>{orderNeed.suggestedOrderQty}</strong> for next cycle.</>
           ) : (
             <>No need to order this cycle.</>

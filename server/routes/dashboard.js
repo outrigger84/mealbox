@@ -20,6 +20,14 @@ dashboardRouter.get('/', (req, res) => {
     SELECT * FROM order_plans WHERE received_at IS NULL AND delivery_date <= ? ORDER BY delivery_date ASC
   `).all(today)
 
+  // computeOrderNeed above only looks at stock/eating-days — it has no idea an order for the
+  // upcoming delivery has already been logged (Deliveries → Log order), so its "suggest
+  // ordering N" is still shown even once that's moot. Surfacing the matching pending order
+  // plan (if any) separately lets the Home banner say "already ordered" instead.
+  const pendingOrder = db.prepare(`
+    SELECT * FROM order_plans WHERE delivery_date = ? AND received_at IS NULL
+  `).get(delivery.nextDeliveryDate) ?? null
+
   // A meal_slots row with no status stored at all defaults to "subscription" (see
   // server/routes/meal-slots.js) — so demand isn't just explicit 'subscription' rows, it's
   // every (date, enabled meal_type) combo that isn't explicitly 'not_subscription'/'freezer'.
@@ -71,7 +79,7 @@ dashboardRouter.get('/', (req, res) => {
     .map(withFreezeType)
 
   res.json({
-    today, delivery, orderNeed, expiryWarnings, pendingReceipts,
+    today, delivery, orderNeed, expiryWarnings, pendingReceipts, pendingOrder,
     freezerCandidates, unallocatedFreezerPool, needFreezingCount,
   })
 })
