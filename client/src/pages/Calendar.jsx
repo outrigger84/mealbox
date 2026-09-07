@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { mealSlots as mealSlotsApi, meals as mealsApi, schedule as scheduleApi } from '@/api/client'
+import { mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
 import { addDays, formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react'
+import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, AlertTriangle, Plane } from 'lucide-react'
 
 const ALL_MEAL_TYPES = [
   { key: 'breakfast', label: 'Breakfast', enabledField: 'breakfast_enabled' },
@@ -51,11 +51,17 @@ export default function Calendar() {
     queryKey: ['meals', 'unassigned'],
     queryFn: () => mealsApi.list('unassigned=1'),
   })
+  const { data: awayDays } = useQuery({
+    queryKey: ['non-subscription-days', cycle?.cycleStart, cycle?.cycleEnd],
+    queryFn: () => nonSubscriptionDaysApi.listRange(cycle.cycleStart, addDays(cycle.cycleEnd, 1)),
+    enabled: !!cycle,
+  })
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['meal-slots'] })
     queryClient.invalidateQueries({ queryKey: ['meals'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    queryClient.invalidateQueries({ queryKey: ['non-subscription-days'] })
   }
 
   const setStatusMutation = useMutation({
@@ -66,6 +72,22 @@ export default function Calendar() {
     mutationFn: ({ date, meal_type, meal_id }) => mealSlotsApi.assignMeal(date, meal_type, meal_id),
     onSuccess: () => { invalidateAll(); setOpenSlotKey(null) },
   })
+  // Marking a day away flags it (excluded from the Home order-need count) and also cycles
+  // every enabled meal-type slot on that day to not_subscription, so the slot planner and
+  // freezer-candidate matching (both slot-level) agree with the day-level flag rather than
+  // needing every slot cleared by hand. Un-marking only removes the flag — it deliberately
+  // leaves the slots as not_subscription rather than guessing what they were before.
+  const markAwayMutation = useMutation({
+    mutationFn: async ({ date, mealTypeKeys }) => {
+      await nonSubscriptionDaysApi.create({ date, reason: 'other' })
+      await Promise.all(mealTypeKeys.map((key) => mealSlotsApi.setStatus(date, key, 'not_subscription')))
+    },
+    onSuccess: invalidateAll,
+  })
+  const unmarkAwayMutation = useMutation({
+    mutationFn: (id) => nonSubscriptionDaysApi.delete(id),
+    onSuccess: invalidateAll,
+  })
 
   if (cycleLoading || slotsLoading || scheduleLoading || !cycle || !scheduleConfig) {
     return <p className="text-muted-foreground">Loading…</p>
@@ -73,12 +95,23 @@ export default function Calendar() {
 
   const MEAL_TYPES = ALL_MEAL_TYPES.filter((mt) => scheduleConfig[mt.enabledField])
   const slotByKey = Object.fromEntries((slots ?? []).map((s) => [`${s.date}|${s.meal_type}`, s]))
+  const awayByDate = Object.fromEntries((awayDays ?? []).map((d) => [d.date, d]))
   // A cycle is always exactly 7 days (delivery is a fixed weekday) — cycleStart..cycleEnd inclusive.
   const days = Array.from({ length: 7 }, (_, i) => addDays(cycle.cycleStart, i))
 
   function handleCycle(date, meal_type, currentStatus) {
     const nextIndex = (CYCLE.indexOf(currentStatus) + 1) % CYCLE.length
     setStatusMutation.mutate({ date, meal_type, status: CYCLE[nextIndex] })
+    setOpenSlotKey(null)
+  }
+
+  function toggleAway(date) {
+    const existing = awayByDate[date]
+    if (existing) {
+      unmarkAwayMutation.mutate(existing.id)
+    } else {
+      markAwayMutation.mutate({ date, mealTypeKeys: MEAL_TYPES.map((mt) => mt.key) })
+    }
     setOpenSlotKey(null)
   }
 
@@ -122,9 +155,23 @@ export default function Calendar() {
         <AlertTriangle className="inline w-3 h-3 text-destructive align-text-bottom" /> means that meal
         will already be expired by that day.
       </p>
-      {days.map((date) => (
-        <div key={date} className="rounded-lg border bg-card p-3 space-y-2">
-          <p className="font-medium text-sm">{formatDisplay(date)}</p>
+      {days.map((date) => {
+        const isAway = !!awayByDate[date]
+        return (
+        <div key={date} className={cn('rounded-lg border bg-card p-3 space-y-2', isAway && 'opacity-60')}>
+          <div className="flex items-center justify-between">
+            <p className="font-medium text-sm">{formatDisplay(date)}</p>
+            <button
+              onClick={() => toggleAway(date)}
+              className={cn(
+                'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium',
+                isAway ? 'bg-destructive/10 text-destructive' : 'border border-dashed text-muted-foreground'
+              )}
+            >
+              <Plane className="w-3 h-3" />
+              {isAway ? 'Away' : 'Mark away'}
+            </button>
+          </div>
           {MEAL_TYPES.map(({ key, label }) => {
             const slotKey = `${date}|${key}`
             const slot = slotByKey[slotKey]
@@ -217,7 +264,8 @@ export default function Calendar() {
             )
           })}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
