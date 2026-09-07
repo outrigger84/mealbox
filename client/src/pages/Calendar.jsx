@@ -322,7 +322,7 @@ export default function Calendar() {
         }
 
         return (
-        <div key={date} className={cn('rounded-lg border bg-card p-3 space-y-2', (isAway || isPast) && 'opacity-60')}>
+        <div key={date} className={cn('rounded-lg border bg-card p-3 space-y-2', isPast && 'opacity-60')}>
           <div className="flex items-center justify-between">
             <p className="font-medium text-sm">{formatDisplay(date)}</p>
             <div className="flex items-center gap-1.5">
@@ -364,7 +364,7 @@ export default function Calendar() {
               && setStatusMutation.variables?.meal_type === key
 
             return (
-              <div key={key} className="flex items-center gap-2">
+              <div key={key} className={cn('flex items-center gap-2', status === 'not_subscription' && 'opacity-60')}>
                 <button
                   onClick={() => handleCycle(date, key, status)}
                   disabled={isSlotPending}
