@@ -31,6 +31,8 @@ const STATUS_ICON = {
 export default function Calendar() {
   const [cycleOffset, setCycleOffset] = useState(0)
   const [openSlotKey, setOpenSlotKey] = useState(null)
+  const [rangeStart, setRangeStart] = useState('')
+  const [rangeEnd, setRangeEnd] = useState('')
   const queryClient = useQueryClient()
 
   const { data: cycle, isLoading: cycleLoading } = useQuery({
@@ -88,6 +90,27 @@ export default function Calendar() {
     mutationFn: (id) => nonSubscriptionDaysApi.delete(id),
     onSuccess: invalidateAll,
   })
+  // Bulk version of markAwayMutation for a whole trip: applies the same day-flag +
+  // slot-sync to every date in [start, end] inclusive, not just the currently viewed
+  // cycle — a two-week holiday will usually span more than one. A date already flagged
+  // (409 from the create call) is skipped for the flag but still gets its slots synced,
+  // so re-running the range after tweaking the end date is safe.
+  const markRangeMutation = useMutation({
+    mutationFn: async ({ start, end, mealTypeKeys }) => {
+      const dates = []
+      for (let d = start; d <= end; d = addDays(d, 1)) dates.push(d)
+      for (const date of dates) {
+        try {
+          await nonSubscriptionDaysApi.create({ date, reason: 'other' })
+        } catch {
+          // already flagged — fall through to slot sync below
+        }
+        await Promise.all(mealTypeKeys.map((key) => mealSlotsApi.setStatus(date, key, 'not_subscription')))
+      }
+      return dates.length
+    },
+    onSuccess: () => { invalidateAll(); setRangeStart(''); setRangeEnd('') },
+  })
 
   if (cycleLoading || slotsLoading || scheduleLoading || !cycle || !scheduleConfig) {
     return <p className="text-muted-foreground">Loading…</p>
@@ -113,6 +136,12 @@ export default function Calendar() {
       markAwayMutation.mutate({ date, mealTypeKeys: MEAL_TYPES.map((mt) => mt.key) })
     }
     setOpenSlotKey(null)
+  }
+
+  function handleMarkRange(e) {
+    e.preventDefault()
+    if (!rangeStart || !rangeEnd || rangeEnd < rangeStart) return
+    markRangeMutation.mutate({ start: rangeStart, end: rangeEnd, mealTypeKeys: MEAL_TYPES.map((mt) => mt.key) })
   }
 
   // Picking a meal that'll already be expired by the slot's date offers to freeze it first
@@ -147,6 +176,37 @@ export default function Calendar() {
           Delivered: {formatDisplay(cycle.deliveryDate)} · Order by: {formatDisplay(cycle.orderByDate)} (for {formatDisplay(cycle.nextDeliveryDate)}'s delivery)
         </p>
       </div>
+
+      <form onSubmit={handleMarkRange} className="rounded-lg border bg-card p-3 space-y-2">
+        <p className="text-sm font-medium flex items-center gap-1.5"><Plane className="w-3.5 h-3.5" /> Mark a trip away</p>
+        <p className="text-xs text-muted-foreground">
+          For a holiday or work trip — flags every date in the range and sets its meal slots to
+          not subscription, same as the per-day toggle below, in one go. Not limited to the cycle shown above.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="date" required value={rangeStart}
+            onChange={(e) => setRangeStart(e.target.value)}
+            className="rounded-md border px-2 py-1.5 text-sm"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <input
+            type="date" required value={rangeEnd} min={rangeStart || undefined}
+            onChange={(e) => setRangeEnd(e.target.value)}
+            className="rounded-md border px-2 py-1.5 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={!rangeStart || !rangeEnd || rangeEnd < rangeStart || markRangeMutation.isPending}
+            className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+          >
+            {markRangeMutation.isPending ? 'Marking…' : 'Mark away'}
+          </button>
+        </div>
+        {markRangeMutation.isSuccess && (
+          <p className="text-xs text-muted-foreground">Marked {markRangeMutation.data} day{markRangeMutation.data === 1 ? '' : 's'} away.</p>
+        )}
+      </form>
 
       <p className="text-xs text-muted-foreground">
         Tap a meal to cycle: undecided → subscription meal → not subscription → freezer. For a
