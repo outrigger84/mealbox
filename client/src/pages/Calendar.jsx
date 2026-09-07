@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { dashboard as dashboardApi, mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
 import { addDays, formatDisplay, todayStr } from '@/lib/dates'
@@ -34,7 +34,17 @@ export default function Calendar() {
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
   const [rangeFormOpen, setRangeFormOpen] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(cycleOffset !== 0)
+  const [expandedPastDates, setExpandedPastDates] = useState(() => new Set())
   const queryClient = useQueryClient()
+
+  // The stat boxes matter most while a cycle's order decision is still being made — once
+  // you're mid-way through the current week that decision is already locked in, so default
+  // them collapsed there (still one tap away, to check things went as planned). Any other
+  // cycle (future planning, past review) defaults open.
+  useEffect(() => {
+    setStatsOpen(cycleOffset !== 0)
+  }, [cycleOffset])
 
   const { data: cycle, isLoading: cycleLoading } = useQuery({
     queryKey: ['calendar-cycle', cycleOffset],
@@ -163,6 +173,15 @@ export default function Calendar() {
     setOpenSlotKey(null)
   }
 
+  function togglePastDay(date) {
+    setExpandedPastDates((prev) => {
+      const next = new Set(prev)
+      if (next.has(date)) next.delete(date)
+      else next.add(date)
+      return next
+    })
+  }
+
   function handleMarkRange(e) {
     e.preventDefault()
     if (!rangeStart || !rangeEnd || rangeEnd < rangeStart) return
@@ -202,56 +221,96 @@ export default function Calendar() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-lg border bg-card p-3">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <UtensilsCrossed className="w-3.5 h-3.5" /> Meals required
-          </p>
-          <p className="mt-1 text-xl font-semibold">{mealsRequired}</p>
-        </div>
-        <div className="rounded-lg border bg-card p-3">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Truck className="w-3.5 h-3.5" /> Meals delivered
-          </p>
-          <p className="mt-1 text-xl font-semibold">{mealsDelivered}</p>
-        </div>
-        <div className={cn(
-          'rounded-lg border p-3',
-          surplus >= 0 ? 'bg-accent/40 border-accent' : 'bg-destructive/10 border-destructive/30'
-        )}>
-          <p className={cn(
-            'flex items-center gap-1.5 text-xs font-medium',
-            surplus >= 0 ? 'text-accent-foreground' : 'text-destructive'
-          )}>
-            {surplus >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-            {surplus >= 0 ? 'Surplus' : 'Deficit'}
-          </p>
-          <p className="mt-1 text-xl font-semibold">{surplus >= 0 ? `+${surplus}` : surplus}</p>
-        </div>
-        <div className="rounded-lg border bg-sky-50 border-sky-200 p-3">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-sky-900">
-            <Snowflake className="w-3.5 h-3.5" /> Est. in freezer
-          </p>
-          <p className="mt-1 text-xl font-semibold text-sky-900">{estimatedFreezerStock}</p>
-        </div>
+      <div className="rounded-lg border bg-card p-3 space-y-2">
+        <button
+          onClick={() => setStatsOpen((o) => !o)}
+          className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground w-full"
+        >
+          Order-decision stats
+          {statsOpen ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
+        </button>
+        {statsOpen && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg border bg-card p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <UtensilsCrossed className="w-3.5 h-3.5" /> Meals required
+              </p>
+              <p className="mt-1 text-xl font-semibold">{mealsRequired}</p>
+            </div>
+            <div className="rounded-lg border bg-card p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Truck className="w-3.5 h-3.5" /> Meals delivered
+              </p>
+              <p className="mt-1 text-xl font-semibold">{mealsDelivered}</p>
+            </div>
+            <div className={cn(
+              'rounded-lg border p-3',
+              surplus >= 0 ? 'bg-accent/40 border-accent' : 'bg-destructive/10 border-destructive/30'
+            )}>
+              <p className={cn(
+                'flex items-center gap-1.5 text-xs font-medium',
+                surplus >= 0 ? 'text-accent-foreground' : 'text-destructive'
+              )}>
+                {surplus >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                {surplus >= 0 ? 'Surplus' : 'Deficit'}
+              </p>
+              <p className="mt-1 text-xl font-semibold">{surplus >= 0 ? `+${surplus}` : surplus}</p>
+            </div>
+            <div className="rounded-lg border bg-sky-50 border-sky-200 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-sky-900">
+                <Snowflake className="w-3.5 h-3.5" /> Est. in freezer
+              </p>
+              <p className="mt-1 text-xl font-semibold text-sky-900">{estimatedFreezerStock}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {days.map((date) => {
         const isAway = !!awayByDate[date]
+        const isPast = date < today
+        const isPastCollapsed = isPast && !expandedPastDates.has(date)
+
+        if (isPastCollapsed) {
+          return (
+            <button
+              key={date}
+              onClick={() => togglePastDay(date)}
+              className="flex items-center justify-between w-full rounded-lg border bg-card p-3 opacity-50 text-sm"
+            >
+              <span>{formatDisplay(date)}</span>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                Past <ChevronDown className="w-3.5 h-3.5" />
+              </span>
+            </button>
+          )
+        }
+
         return (
-        <div key={date} className={cn('rounded-lg border bg-card p-3 space-y-2', isAway && 'opacity-60')}>
+        <div key={date} className={cn('rounded-lg border bg-card p-3 space-y-2', (isAway || isPast) && 'opacity-60')}>
           <div className="flex items-center justify-between">
             <p className="font-medium text-sm">{formatDisplay(date)}</p>
-            <button
-              onClick={() => toggleAway(date)}
-              className={cn(
-                'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium',
-                isAway ? 'bg-destructive/10 text-destructive' : 'border border-dashed text-muted-foreground'
+            <div className="flex items-center gap-1.5">
+              {isPast && (
+                <button
+                  onClick={() => togglePastDay(date)}
+                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground"
+                  aria-label="Collapse past day"
+                >
+                  <ChevronUp className="w-3.5 h-3.5" />
+                </button>
               )}
-            >
-              <Plane className="w-3 h-3" />
-              {isAway ? 'Away' : 'Mark away'}
-            </button>
+              <button
+                onClick={() => toggleAway(date)}
+                className={cn(
+                  'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium',
+                  isAway ? 'bg-destructive/10 text-destructive' : 'border border-dashed text-muted-foreground'
+                )}
+              >
+                <Plane className="w-3 h-3" />
+                {isAway ? 'Away' : 'Mark away'}
+              </button>
+            </div>
           </div>
           {MEAL_TYPES.map(({ key, label }) => {
             const slotKey = `${date}|${key}`
