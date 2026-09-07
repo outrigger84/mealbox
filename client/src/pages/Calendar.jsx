@@ -52,6 +52,15 @@ export default function Calendar() {
     queryKey: ['calendar-cycle', cycleOffset],
     queryFn: () => scheduleApi.getCycle(cycleOffset),
   })
+  // cycle.orderByDate/nextDeliveryDate describe the *next* delivery (which starts the
+  // following cycle), not the one that actually supplied this cycle — pairing them with
+  // cycle.deliveryDate in the header would misattribute which order produced which delivery.
+  // The order-by that produced *this* cycle's own delivery is the previous cycle's orderByDate
+  // (previousCycle.nextDeliveryDate === cycle.deliveryDate, by construction).
+  const { data: previousCycle, isLoading: previousCycleLoading } = useQuery({
+    queryKey: ['calendar-cycle', cycleOffset - 1],
+    queryFn: () => scheduleApi.getCycle(cycleOffset - 1),
+  })
   const { data: scheduleConfig, isLoading: scheduleLoading } = useQuery({
     queryKey: ['schedule'],
     queryFn: scheduleApi.get,
@@ -138,7 +147,7 @@ export default function Calendar() {
     onSuccess: () => { invalidateAll(); setRangeStart(''); setRangeEnd(''); setRangeFormOpen(false) },
   })
 
-  if (cycleLoading || slotsLoading || scheduleLoading || frozenMealsLoading || (cycleOffset >= 0 && projectionLoading) || !cycle || !scheduleConfig) {
+  if (cycleLoading || previousCycleLoading || slotsLoading || scheduleLoading || frozenMealsLoading || (cycleOffset >= 0 && projectionLoading) || !cycle || !previousCycle || !scheduleConfig) {
     return <p className="text-muted-foreground">Loading…</p>
   }
 
@@ -244,7 +253,7 @@ export default function Calendar() {
           </button>
         </div>
         <p className="text-xs text-muted-foreground text-center">
-          Delivered: {formatDisplay(cycle.deliveryDate)} · Order by: {formatDisplay(cycle.orderByDate)} (for {formatDisplay(cycle.nextDeliveryDate)}'s delivery)
+          Order by {formatDisplay(previousCycle.orderByDate)} for delivery {formatDisplay(cycle.deliveryDate)}
         </p>
         {cycleOffset !== 0 && (
           <button
