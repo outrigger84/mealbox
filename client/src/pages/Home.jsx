@@ -39,7 +39,7 @@ export default function Home() {
   if (isLoading) return <p className="text-muted-foreground">Loading…</p>
   if (!data) return null
 
-  const { delivery, orderNeed, expiryWarnings, pendingReceipts, freezerCandidates } = data
+  const { delivery, orderNeed, expiryWarnings, pendingReceipts, freezerCandidates, unallocatedFreezerPool, needFreezingCount } = data
 
   return (
     <div className="space-y-4 max-w-2xl">
@@ -83,10 +83,34 @@ export default function Home() {
             {freezerCandidates.length} meal{freezerCandidates.length === 1 ? '' : 's'} should go in the freezer
           </div>
           <p className="mt-1 text-sm text-sky-800">
-            Based on your Calendar plan, these won't be eaten before they expire:
+            Assigned to a Calendar slot that won't happen before they expire:
           </p>
           <ul className="mt-2 space-y-2">
             {freezerCandidates.map((m) => (
+              <FreezeRow
+                key={m.id}
+                meal={m}
+                onFreeze={(freeze_type) => freezeMutation.mutate({ id: m.id, freeze_type })}
+                isPending={freezeMutation.isPending}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {unallocatedFreezerPool?.length > 0 && (
+        <div className="rounded-lg border bg-sky-50 border-sky-200 p-4">
+          <div className="flex items-center gap-2 font-semibold text-sky-900">
+            <Snowflake className="w-5 h-5" />
+            {needFreezingCount} of these {unallocatedFreezerPool.length} meals will need freezing
+          </div>
+          <p className="mt-1 text-sm text-sky-800">
+            None of these are assigned to a Calendar slot yet, so which specific ones is up to
+            you — pick {needFreezingCount === 1 ? 'one' : `${needFreezingCount}`} to freeze now,
+            or assign the rest to slots on the Calendar first.
+          </p>
+          <ul className="mt-2 space-y-2">
+            {unallocatedFreezerPool.map((m) => (
               <FreezeRow
                 key={m.id}
                 meal={m}

@@ -51,13 +51,29 @@ dashboardRouter.get('/', (req, res) => {
 
   const { cycleEnd } = cycleBounds(scheduleConfig, today, 0)
   const findAssignedDate = db.prepare('SELECT date FROM meal_slots WHERE meal_id = ?')
-  const freezerCandidates = rawFreezerCandidates.map((m) => {
+  const withFreezeType = (m) => {
     const assignedSlot = findAssignedDate.get(m.id)
     const suggestedFreezeType = assignedSlot && assignedSlot.date <= cycleEnd ? 'light' : 'deep'
     return { ...m, assignedSlotDate: assignedSlot?.date ?? null, suggestedFreezeType }
-  })
+  }
 
-  res.json({ today, delivery, orderNeed, expiryWarnings, pendingReceipts, freezerCandidates })
+  // A candidate that IS assigned to a real slot (but that slot falls outside its usable
+  // window) is a specific, real problem — name it. A candidate with no assignment at all came
+  // out of the generic capacity pool in computeFreezerCandidates, which only knows a *count*
+  // must be frozen, not *which* — any of the unassigned stock could equally be "the one" that
+  // ends up unmatched depending on what you actually pick later. Naming an arbitrary N of them
+  // (by id order) would misrepresent that as a real decision already made, so instead surface
+  // the whole unassigned pool plus how many of it need freezing, and let the user choose.
+  const freezerCandidates = rawFreezerCandidates.filter((m) => findAssignedDate.get(m.id)).map(withFreezeType)
+  const needFreezingCount = rawFreezerCandidates.length - freezerCandidates.length
+  const unallocatedFreezerPool = meals
+    .filter((m) => !m.eaten && !m.frozen_at && m.expiry_date >= today && !findAssignedDate.get(m.id))
+    .map(withFreezeType)
+
+  res.json({
+    today, delivery, orderNeed, expiryWarnings, pendingReceipts,
+    freezerCandidates, unallocatedFreezerPool, needFreezingCount,
+  })
 })
 
 // Rolling order-decision projection for cycles 0..periods-1 (offset 0 = current cycle).
