@@ -20,10 +20,10 @@ dashboardRouter.get('/', (req, res) => {
     SELECT * FROM order_plans WHERE received_at IS NULL AND delivery_date <= ? ORDER BY delivery_date ASC
   `).all(today)
 
-  const subscriptionSlotDates = db.prepare(`
-    SELECT date FROM meal_slots WHERE status = 'subscription' AND date >= ?
-  `).all(today).map((r) => r.date)
-  const rawFreezerCandidates = computeFreezerCandidates(meals, subscriptionSlotDates, today)
+  const subscriptionSlots = db.prepare(`
+    SELECT date, meal_id FROM meal_slots WHERE status = 'subscription' AND date >= ?
+  `).all(today)
+  const rawFreezerCandidates = computeFreezerCandidates(meals, subscriptionSlots, today)
 
   const { cycleEnd } = cycleBounds(scheduleConfig, today, 0)
   const findAssignedDate = db.prepare('SELECT date FROM meal_slots WHERE meal_id = ?')

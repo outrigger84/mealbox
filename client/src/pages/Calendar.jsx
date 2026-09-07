@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { dashboard as dashboardApi, mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
+import { mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
 import { addDays, formatDisplay, todayStr } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown } from 'lucide-react'
@@ -69,10 +69,6 @@ export default function Calendar() {
     queryFn: () => nonSubscriptionDaysApi.listRange(cycle.cycleStart, addDays(cycle.cycleEnd, 1)),
     enabled: !!cycle,
   })
-  const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: dashboardApi.get,
-  })
   const { data: frozenMeals, isLoading: frozenMealsLoading } = useQuery({
     queryKey: ['meals', 'frozen', 'uneaten'],
     queryFn: () => mealsApi.list('frozen=1&eaten=0'),
@@ -131,7 +127,7 @@ export default function Calendar() {
     onSuccess: () => { invalidateAll(); setRangeStart(''); setRangeEnd(''); setRangeFormOpen(false) },
   })
 
-  if (cycleLoading || slotsLoading || scheduleLoading || dashboardLoading || frozenMealsLoading || !cycle || !scheduleConfig) {
+  if (cycleLoading || slotsLoading || scheduleLoading || frozenMealsLoading || !cycle || !scheduleConfig) {
     return <p className="text-muted-foreground">Loading…</p>
   }
 
@@ -148,14 +144,19 @@ export default function Calendar() {
   const mealsRequired = (slots ?? []).filter((s) => s.status === 'subscription').length
   const mealsDelivered = scheduleConfig.default_order_qty
   const surplus = mealsDelivered - mealsRequired
+  // Deliberately actual current freezer stock, not a forward projection: an "anticipated
+  // additions" term (meals not yet frozen but expected to need it) was tried and dropped —
+  // before a delivery decision, counting meals that aren't physically in the freezer yet as
+  // "in the freezer" was misleading. Freezer *candidates* (what needs freezing soon) are a
+  // separate concern, surfaced on Home instead. This box only subtracts what's already been
+  // committed to eating from the freezer (planned withdrawals), not what might get added.
   const deepFrozenStock = (frozenMeals ?? []).filter((m) => m.freeze_type === 'deep').length
-  const anticipatedDeepAdditions = (dashboardData?.freezerCandidates ?? []).filter((c) => c.suggestedFreezeType === 'deep').length
   // A freezer-status slot whose meal has already been eaten still counts as a "planned
   // withdrawal" here (the slot row isn't cleared on eat) — self-correcting in practice
   // since an eaten meal already drops out of deepFrozenStock above, so this only risks a
   // slight under-count, never a double-count. Revisit with a meal_eaten join if it drifts.
   const plannedFreezerWithdrawals = (slots ?? []).filter((s) => s.status === 'freezer' && s.date >= today).length
-  const estimatedFreezerStock = deepFrozenStock + anticipatedDeepAdditions - plannedFreezerWithdrawals
+  const estimatedFreezerStock = deepFrozenStock - plannedFreezerWithdrawals
 
   function handleCycle(date, meal_type, currentStatus) {
     const nextIndex = (CYCLE.indexOf(currentStatus) + 1) % CYCLE.length
