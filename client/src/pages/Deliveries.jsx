@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { orderPlans as orderPlansApi } from '@/api/client'
+import { orderPlans as orderPlansApi, schedule as scheduleApi } from '@/api/client'
 import { todayStr, addDays, formatDisplay } from '@/lib/dates'
 import { parseBoxPaste } from '@/lib/parseBoxPaste'
 import { cn } from '@/lib/utils'
@@ -36,11 +36,34 @@ export default function Deliveries() {
   )
 }
 
+// Next occurrence of the weekly delivery weekday (starting tomorrow), skipping any date
+// that already has an order plan logged against it.
+function nextUnloggedDeliveryDate(deliveryWeekday, orderPlansList) {
+  const loggedDates = new Set((orderPlansList ?? []).map((p) => p.delivery_date))
+  let candidate = addDays(todayStr(), 1)
+  while (new Date(candidate + 'T00:00:00Z').getUTCDay() !== deliveryWeekday) {
+    candidate = addDays(candidate, 1)
+  }
+  while (loggedDates.has(candidate)) {
+    candidate = addDays(candidate, 7)
+  }
+  return candidate
+}
+
 function LogOrder() {
   const queryClient = useQueryClient()
+  const { data: scheduleConfig } = useQuery({ queryKey: ['schedule'], queryFn: scheduleApi.get })
+  const { data: orderPlansList } = useQuery({ queryKey: ['order-plans'], queryFn: orderPlansApi.list })
+
   const [deliveryDate, setDeliveryDate] = useState(addDays(todayStr(), 1))
+  const [dateTouched, setDateTouched] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [parsedNames, setParsedNames] = useState(null)
+
+  useEffect(() => {
+    if (dateTouched || !scheduleConfig || !orderPlansList) return
+    setDeliveryDate(nextUnloggedDeliveryDate(scheduleConfig.delivery_weekday, orderPlansList))
+  }, [scheduleConfig, orderPlansList, dateTouched])
 
   const logMutation = useMutation({
     mutationFn: () => orderPlansApi.logOrder(deliveryDate, parsedNames),
@@ -49,6 +72,7 @@ function LogOrder() {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       setPasteText('')
       setParsedNames(null)
+      setDateTouched(false)
     },
   })
 
@@ -71,7 +95,7 @@ function LogOrder() {
         Expected delivery date
         <input
           type="date" required value={deliveryDate}
-          onChange={(e) => setDeliveryDate(e.target.value)}
+          onChange={(e) => { setDeliveryDate(e.target.value); setDateTouched(true) }}
           className="mt-1 w-full rounded-md border px-2 py-1.5 text-sm"
         />
       </label>
