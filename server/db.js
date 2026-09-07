@@ -18,6 +18,9 @@ db.exec(`
     order_by_weekday INTEGER NOT NULL DEFAULT 5,
     order_by_time TEXT,
     default_order_qty INTEGER NOT NULL DEFAULT 7,
+    breakfast_enabled INTEGER NOT NULL DEFAULT 0,
+    lunch_enabled INTEGER NOT NULL DEFAULT 1,
+    dinner_enabled INTEGER NOT NULL DEFAULT 1,
     updated_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -96,6 +99,17 @@ function migrate() {
   }
   if (!mealColumns.includes('freeze_type')) {
     db.exec("ALTER TABLE meals ADD COLUMN freeze_type TEXT CHECK (freeze_type IN ('light','deep'))")
+  }
+
+  const scheduleColumns = db.prepare("PRAGMA table_info(schedule_config)").all().map((c) => c.name)
+  if (!scheduleColumns.includes('breakfast_enabled')) {
+    db.exec('ALTER TABLE schedule_config ADD COLUMN breakfast_enabled INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!scheduleColumns.includes('lunch_enabled')) {
+    db.exec('ALTER TABLE schedule_config ADD COLUMN lunch_enabled INTEGER NOT NULL DEFAULT 1')
+  }
+  if (!scheduleColumns.includes('dinner_enabled')) {
+    db.exec('ALTER TABLE schedule_config ADD COLUMN dinner_enabled INTEGER NOT NULL DEFAULT 1')
   }
 }
 

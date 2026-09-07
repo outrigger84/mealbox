@@ -3,6 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { schedule as scheduleApi } from '@/api/client'
 import { WEEKDAY_NAMES } from '@/lib/dates'
 
+const MEAL_TYPE_FIELDS = [
+  { key: 'breakfast_enabled', label: 'Breakfast' },
+  { key: 'lunch_enabled', label: 'Lunch' },
+  { key: 'dinner_enabled', label: 'Dinner' },
+]
+
 export default function Settings() {
   const queryClient = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['schedule'], queryFn: scheduleApi.get })
@@ -72,6 +78,24 @@ export default function Settings() {
           className="mt-1 w-full rounded-md border px-2 py-1.5 text-sm"
         />
       </label>
+
+      <div className="space-y-2">
+        <p className="text-sm">Meal slots in plan</p>
+        <p className="text-xs text-muted-foreground">
+          Which meal-of-day slots show up in the Calendar planner. Turn a slot off if you don't
+          currently order it from the subscription — turn it back on any time.
+        </p>
+        {MEAL_TYPE_FIELDS.map(({ key, label }) => (
+          <label key={key} className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={!!form[key]}
+              onChange={(e) => setForm({ ...form, [key]: e.target.checked ? 1 : 0 })}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
 
       <button
         type="submit"

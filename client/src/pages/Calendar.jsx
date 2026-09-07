@@ -5,10 +5,10 @@ import { addDays, formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react'
 
-const MEAL_TYPES = [
-  { key: 'breakfast', label: 'Breakfast' },
-  { key: 'lunch', label: 'Lunch' },
-  { key: 'dinner', label: 'Dinner' },
+const ALL_MEAL_TYPES = [
+  { key: 'breakfast', label: 'Breakfast', enabledField: 'breakfast_enabled' },
+  { key: 'lunch', label: 'Lunch', enabledField: 'lunch_enabled' },
+  { key: 'dinner', label: 'Dinner', enabledField: 'dinner_enabled' },
 ]
 
 // Tap cycles through: undecided (no row) -> subscription -> not_subscription -> freezer -> undecided
@@ -37,6 +37,10 @@ export default function Calendar() {
     queryKey: ['calendar-cycle', cycleOffset],
     queryFn: () => scheduleApi.getCycle(cycleOffset),
   })
+  const { data: scheduleConfig, isLoading: scheduleLoading } = useQuery({
+    queryKey: ['schedule'],
+    queryFn: scheduleApi.get,
+  })
 
   const { data: slots, isLoading: slotsLoading } = useQuery({
     queryKey: ['meal-slots', cycle?.cycleStart, cycle?.cycleEnd],
@@ -63,8 +67,11 @@ export default function Calendar() {
     onSuccess: () => { invalidateAll(); setOpenSlotKey(null) },
   })
 
-  if (cycleLoading || slotsLoading || !cycle) return <p className="text-muted-foreground">Loading…</p>
+  if (cycleLoading || slotsLoading || scheduleLoading || !cycle || !scheduleConfig) {
+    return <p className="text-muted-foreground">Loading…</p>
+  }
 
+  const MEAL_TYPES = ALL_MEAL_TYPES.filter((mt) => scheduleConfig[mt.enabledField])
   const slotByKey = Object.fromEntries((slots ?? []).map((s) => [`${s.date}|${s.meal_type}`, s]))
   // A cycle is always exactly 7 days (delivery is a fixed weekday) — cycleStart..cycleEnd inclusive.
   const days = Array.from({ length: 7 }, (_, i) => addDays(cycle.cycleStart, i))

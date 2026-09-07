@@ -25,6 +25,9 @@ scheduleRouter.patch('/', (req, res) => {
         order_by_weekday = @order_by_weekday,
         order_by_time = @order_by_time,
         default_order_qty = @default_order_qty,
+        breakfast_enabled = @breakfast_enabled,
+        lunch_enabled = @lunch_enabled,
+        dinner_enabled = @dinner_enabled,
         updated_at = datetime('now')
     WHERE id = 1
   `).run(updated)
