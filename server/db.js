@@ -27,6 +27,7 @@ db.exec(`
     ordered INTEGER NOT NULL DEFAULT 0,
     planned_qty INTEGER,
     notes TEXT,
+    received_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -44,6 +45,15 @@ db.exec(`
     updated_at TEXT DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS order_plan_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_plan_id INTEGER NOT NULL REFERENCES order_plans(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    received INTEGER NOT NULL DEFAULT 0,
+    meal_id INTEGER REFERENCES meals(id) ON DELETE SET NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS non_subscription_days (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL UNIQUE,
@@ -53,7 +63,15 @@ db.exec(`
   );
 `)
 
+migrate()
 seed()
+
+function migrate() {
+  const columns = db.prepare("PRAGMA table_info(order_plans)").all().map((c) => c.name)
+  if (!columns.includes('received_at')) {
+    db.exec('ALTER TABLE order_plans ADD COLUMN received_at TEXT')
+  }
+}
 
 function seed() {
   const configRow = db.prepare('SELECT id FROM schedule_config WHERE id = 1').get()

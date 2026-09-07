@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { dashboard } from '@/api/client'
 import { formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { AlertTriangle, Clock, PackageCheck } from 'lucide-react'
+import { AlertTriangle, Clock, PackageCheck, Truck } from 'lucide-react'
 
 const STATUS_STYLE = {
   order_now: 'bg-destructive/10 text-destructive border-destructive/30',
@@ -28,10 +29,23 @@ export default function Home() {
   if (isLoading) return <p className="text-muted-foreground">Loading…</p>
   if (!data) return null
 
-  const { delivery, orderNeed, expiryWarnings } = data
+  const { delivery, orderNeed, expiryWarnings, pendingReceipts } = data
 
   return (
     <div className="space-y-4 max-w-2xl">
+      {pendingReceipts?.length > 0 && (
+        <Link
+          to="/deliveries"
+          className="flex items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/10 p-4"
+        >
+          <span className="flex items-center gap-2 font-semibold text-sm">
+            <Truck className="w-5 h-5 text-primary" />
+            {pendingReceipts.length} delivery{pendingReceipts.length === 1 ? '' : 'ies'} awaiting receipt
+          </span>
+          <span className="text-xs font-medium text-primary shrink-0">Receipt now →</span>
+        </Link>
+      )}
+
       <div className={cn('rounded-lg border p-4', STATUS_STYLE[delivery.status])}>
         <div className="flex items-center gap-2 font-semibold">
           <PackageCheck className="w-5 h-5" />

@@ -29,7 +29,12 @@ export const meals = {
   markEaten: (id) => request('POST', `/meals/${id}/eat`),
 }
 
-export const orderPlans = makeEntity('order-plans')
+export const orderPlans = {
+  ...makeEntity('order-plans'),
+  listPending: () => request('GET', '/order-plans?pending=1'),
+  logOrder: (delivery_date, names) => request('POST', '/order-plans/paste', { delivery_date, names }),
+  receipt: (id, default_expiry_date, items) => request('POST', `/order-plans/${id}/receipt`, { default_expiry_date, items }),
+}
 
 export const nonSubscriptionDays = {
   ...makeEntity('non-subscription-days'),

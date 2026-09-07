@@ -16,5 +16,9 @@ dashboardRouter.get('/', (req, res) => {
   const orderNeed = computeOrderNeed(meals, nonSubscriptionDays, scheduleConfig, today)
   const expiryWarnings = computeExpiryWarnings(meals, today)
 
-  res.json({ today, delivery, orderNeed, expiryWarnings })
+  const pendingReceipts = db.prepare(`
+    SELECT * FROM order_plans WHERE received_at IS NULL AND delivery_date <= ? ORDER BY delivery_date ASC
+  `).all(today)
+
+  res.json({ today, delivery, orderNeed, expiryWarnings, pendingReceipts })
 })

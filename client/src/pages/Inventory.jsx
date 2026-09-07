@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { meals as mealsApi } from '@/api/client'
 import { todayStr, addDays, formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, Check, X } from 'lucide-react'
+import { Plus, Trash2, Check, X, Truck } from 'lucide-react'
 
 const FILTERS = [
   { key: 'all', label: 'All', query: 'eaten=0' },
@@ -50,16 +51,25 @@ export default function Inventory() {
             </button>
           ))}
         </div>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" />
-          Add delivery
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/deliveries"
+            className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium"
+          >
+            <Truck className="w-4 h-4" />
+            Receive delivery
+          </Link>
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Add meal
+          </button>
+        </div>
       </div>
 
-      {showForm && <AddBatchForm onDone={() => { setShowForm(false); invalidate(); invalidateDashboard() }} />}
+      {showForm && <AddMealForm onDone={() => { setShowForm(false); invalidate(); invalidateDashboard() }} />}
 
       {isLoading ? (
         <p className="text-muted-foreground">Loading…</p>
@@ -100,34 +110,39 @@ export default function Inventory() {
   )
 }
 
-function AddBatchForm({ onDone }) {
+function AddMealForm({ onDone }) {
+  const [name, setName] = useState('')
   const [deliveryDate, setDeliveryDate] = useState(todayStr())
   const [expiryDate, setExpiryDate] = useState(addDays(todayStr(), 5))
-  const [names, setNames] = useState('')
 
-  const batchMutation = useMutation({
-    mutationFn: () => {
-      const items = names
-        .split('\n')
-        .map((n) => n.trim())
-        .filter(Boolean)
-        .map((name) => ({ name, expiry_date: expiryDate }))
-      return mealsApi.batchCreate({ delivery_date: deliveryDate, items })
-    },
+  const addMutation = useMutation({
+    mutationFn: () => mealsApi.create({ name, delivery_date: deliveryDate, expiry_date: expiryDate }),
     onSuccess: onDone,
   })
 
   return (
     <form
-      onSubmit={(e) => { e.preventDefault(); batchMutation.mutate() }}
+      onSubmit={(e) => { e.preventDefault(); addMutation.mutate() }}
       className="rounded-lg border bg-card p-4 space-y-3"
     >
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm">Add delivery batch</h3>
+        <h3 className="font-semibold text-sm">Add a meal manually</h3>
         <button type="button" onClick={onDone} aria-label="Close">
           <X className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
+      <p className="text-xs text-muted-foreground">
+        For a meal that isn't from a logged subscription delivery. Whole deliveries should go through
+        Deliveries → Receive delivery instead.
+      </p>
+      <label className="block text-sm">
+        Meal name
+        <input
+          type="text" required value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="mt-1 w-full rounded-md border px-2 py-1.5 text-sm"
+        />
+      </label>
       <div className="grid grid-cols-2 gap-3">
         <label className="text-sm">
           Delivery date
@@ -146,21 +161,12 @@ function AddBatchForm({ onDone }) {
           />
         </label>
       </div>
-      <label className="block text-sm">
-        Meal names (one per line)
-        <textarea
-          required rows={4} value={names}
-          onChange={(e) => setNames(e.target.value)}
-          placeholder={'Chicken Tikka Masala\nBeef Lasagne'}
-          className="mt-1 w-full rounded-md border px-2 py-1.5 text-sm"
-        />
-      </label>
       <button
         type="submit"
-        disabled={batchMutation.isPending}
+        disabled={addMutation.isPending}
         className="w-full rounded-md bg-primary text-primary-foreground py-2 text-sm font-medium disabled:opacity-60"
       >
-        {batchMutation.isPending ? 'Adding…' : 'Add meals'}
+        {addMutation.isPending ? 'Adding…' : 'Add meal'}
       </button>
     </form>
   )
