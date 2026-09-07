@@ -117,6 +117,10 @@ export default function Calendar() {
     mutationFn: ({ date, meal_type, meal_id }) => mealSlotsApi.assignMeal(date, meal_type, meal_id),
     onSuccess: () => { invalidateAll(); setOpenSlotKey(null) },
   })
+  const setNoteMutation = useMutation({
+    mutationFn: ({ date, meal_type, note }) => mealSlotsApi.setNote(date, meal_type, note),
+    onSuccess: invalidateAll,
+  })
   // Marking a day away flags it (excluded from the Home order-need count) and also cycles
   // every enabled meal-type slot on that day to not_subscription, so the slot planner and
   // freezer-candidate matching (both slot-level) agree with the day-level flag rather than
@@ -409,6 +413,13 @@ export default function Calendar() {
                   />
                 )}
 
+                {status === 'not_subscription' && (
+                  <NoteInput
+                    initialNote={slot?.note ?? ''}
+                    onSave={(note) => setNoteMutation.mutate({ date, meal_type: key, note })}
+                  />
+                )}
+
                 {(status === null || status === 'subscription' || status === 'freezer') && (
                   <div className="flex-1 min-w-0">
                     {slot?.meal_id ? (
@@ -579,5 +590,25 @@ function WallplanCard({ data }) {
         </ul>
       )}
     </div>
+  )
+}
+
+// Freeform reminder for a not_subscription slot (e.g. "Dinner with Jane", "Work trip - hotel
+// restaurant"). Uncontrolled + save-on-blur so typing doesn't fire a request per keystroke; the
+// key forces a remount (resetting the field to the latest server value) whenever that value
+// actually changes elsewhere, without fighting the user's in-progress edit on every refetch.
+function NoteInput({ initialNote, onSave }) {
+  return (
+    <input
+      key={initialNote}
+      type="text"
+      defaultValue={initialNote}
+      placeholder="e.g. Dinner with Jane, Work trip - hotel restaurant"
+      onBlur={(e) => {
+        const value = e.target.value.trim()
+        if (value !== initialNote) onSave(value)
+      }}
+      className="flex-1 min-w-0 rounded-md border border-dashed px-2.5 py-1.5 text-xs bg-transparent text-muted-foreground placeholder:text-muted-foreground/60"
+    />
   )
 }

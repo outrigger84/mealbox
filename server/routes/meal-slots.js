@@ -61,6 +61,30 @@ mealSlotsRouter.put('/', (req, res) => {
   `).get(date, meal_type))
 })
 
+// Freeform reminder text for a slot not being covered by a subscription or freezer meal
+// (e.g. "Dinner with Jane", "Work trip - hotel restaurant") — independent of the status cycle
+// and meal assignment above, same pattern as PUT /meal. Auto-creates the row as
+// 'not_subscription' if none exists yet, since that's the only status the UI offers this from.
+mealSlotsRouter.put('/note', (req, res) => {
+  const { date, meal_type, note } = req.body
+  if (!date || !MEAL_TYPES.includes(meal_type)) {
+    return res.status(400).json({ error: 'valid date and meal_type are required' })
+  }
+
+  const existing = db.prepare('SELECT * FROM meal_slots WHERE date = ? AND meal_type = ?').get(date, meal_type)
+  if (existing) {
+    db.prepare(`UPDATE meal_slots SET note = ?, updated_at = datetime('now') WHERE id = ?`).run(note || null, existing.id)
+  } else {
+    db.prepare('INSERT INTO meal_slots (date, meal_type, status, note) VALUES (?, ?, ?, ?)').run(date, meal_type, 'not_subscription', note || null)
+  }
+
+  res.json(db.prepare(`
+    SELECT ms.*, m.name AS meal_name, m.expiry_date AS meal_expiry_date, m.freeze_type AS meal_freeze_type
+    FROM meal_slots ms LEFT JOIN meals m ON m.id = ms.meal_id
+    WHERE ms.date = ? AND ms.meal_type = ?
+  `).get(date, meal_type))
+})
+
 // Assign (or clear, meal_id: null) a specific stock meal to an existing 'subscription' or
 // 'freezer' slot. Independent of the status cycle above — planning *that* a slot will use a
 // subscription meal can happen before you even know which physical meal that'll be.

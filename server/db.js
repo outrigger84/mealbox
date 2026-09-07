@@ -92,6 +92,9 @@ function migrate() {
   if (!mealSlotColumns.includes('meal_id')) {
     db.exec('ALTER TABLE meal_slots ADD COLUMN meal_id INTEGER REFERENCES meals(id) ON DELETE SET NULL')
   }
+  if (!mealSlotColumns.includes('note')) {
+    db.exec('ALTER TABLE meal_slots ADD COLUMN note TEXT')
+  }
 
   const mealColumns = db.prepare("PRAGMA table_info(meals)").all().map((c) => c.name)
   if (!mealColumns.includes('frozen_at')) {
