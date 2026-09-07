@@ -1,0 +1,50 @@
+const BASE = '/mealbox/api'
+
+async function request(method, path, body) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  }
+  if (body !== undefined) opts.body = JSON.stringify(body)
+  const res = await fetch(`${BASE}${path}`, opts)
+  if (res.status === 204) return null
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || 'Request failed')
+  return data
+}
+
+function makeEntity(slug) {
+  return {
+    list: (query) => request('GET', `/${slug}${query ? `?${query}` : ''}`),
+    get: (id) => request('GET', `/${slug}/${id}`),
+    create: (data) => request('POST', `/${slug}`, data),
+    update: (id, data) => request('PATCH', `/${slug}/${id}`, data),
+    delete: (id) => request('DELETE', `/${slug}/${id}`),
+  }
+}
+
+export const meals = {
+  ...makeEntity('meals'),
+  batchCreate: (data) => request('POST', '/meals/batch', data),
+  markEaten: (id) => request('POST', `/meals/${id}/eat`),
+}
+
+export const orderPlans = makeEntity('order-plans')
+
+export const nonSubscriptionDays = {
+  ...makeEntity('non-subscription-days'),
+  listRange: (start, end) => request('GET', `/non-subscription-days?start=${start}&end=${end}`),
+}
+
+export const dashboard = {
+  get: () => request('GET', '/dashboard'),
+}
+
+export const calendar = {
+  getRange: (start, end) => request('GET', `/calendar?start=${start}&end=${end}`),
+}
+
+export const schedule = {
+  get: () => request('GET', '/schedule'),
+  update: (data) => request('PATCH', '/schedule', data),
+}

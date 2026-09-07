@@ -1,0 +1,6 @@
+node_modules/
+.env
+server/public/
+server/data/*.db
+server/data/*.db-wal
+server/data/*.db-shm
