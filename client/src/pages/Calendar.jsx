@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { dashboard as dashboardApi, mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
 import { addDays, formatDisplay, todayStr } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown } from 'lucide-react'
+import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown } from 'lucide-react'
 
 const ALL_MEAL_TYPES = [
   { key: 'breakfast', label: 'Breakfast', enabledField: 'breakfast_enabled' },
@@ -33,6 +33,7 @@ export default function Calendar() {
   const [openSlotKey, setOpenSlotKey] = useState(null)
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
+  const [rangeFormOpen, setRangeFormOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: cycle, isLoading: cycleLoading } = useQuery({
@@ -117,7 +118,7 @@ export default function Calendar() {
       }
       return dates.length
     },
-    onSuccess: () => { invalidateAll(); setRangeStart(''); setRangeEnd('') },
+    onSuccess: () => { invalidateAll(); setRangeStart(''); setRangeEnd(''); setRangeFormOpen(false) },
   })
 
   if (cycleLoading || slotsLoading || scheduleLoading || dashboardLoading || frozenMealsLoading || !cycle || !scheduleConfig) {
@@ -200,37 +201,6 @@ export default function Calendar() {
           Delivered: {formatDisplay(cycle.deliveryDate)} · Order by: {formatDisplay(cycle.orderByDate)} (for {formatDisplay(cycle.nextDeliveryDate)}'s delivery)
         </p>
       </div>
-
-      <form onSubmit={handleMarkRange} className="rounded-lg border bg-card p-3 space-y-2">
-        <p className="text-sm font-medium flex items-center gap-1.5"><Plane className="w-3.5 h-3.5" /> Mark a trip away</p>
-        <p className="text-xs text-muted-foreground">
-          For a holiday or work trip — flags every date in the range and sets its meal slots to
-          not subscription, same as the per-day toggle below, in one go. Not limited to the cycle shown above.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date" required value={rangeStart}
-            onChange={(e) => setRangeStart(e.target.value)}
-            className="rounded-md border px-2 py-1.5 text-sm"
-          />
-          <span className="text-xs text-muted-foreground">to</span>
-          <input
-            type="date" required value={rangeEnd} min={rangeStart || undefined}
-            onChange={(e) => setRangeEnd(e.target.value)}
-            className="rounded-md border px-2 py-1.5 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={!rangeStart || !rangeEnd || rangeEnd < rangeStart || markRangeMutation.isPending}
-            className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm font-medium disabled:opacity-60"
-          >
-            {markRangeMutation.isPending ? 'Marking…' : 'Mark away'}
-          </button>
-        </div>
-        {markRangeMutation.isSuccess && (
-          <p className="text-xs text-muted-foreground">Marked {markRangeMutation.data} day{markRangeMutation.data === 1 ? '' : 's'} away.</p>
-        )}
-      </form>
 
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-lg border bg-card p-3">
@@ -377,6 +347,47 @@ export default function Calendar() {
         </div>
         )
       })}
+
+      <div className="rounded-lg border bg-card p-3 space-y-2">
+        <button
+          onClick={() => setRangeFormOpen((o) => !o)}
+          className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground w-full"
+        >
+          <Plane className="w-3.5 h-3.5" /> Mark a trip away
+          {rangeFormOpen ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
+        </button>
+        {rangeFormOpen && (
+          <form onSubmit={handleMarkRange} className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              For a holiday or work trip — flags every date in the range and sets its meal slots to
+              not subscription, same as the per-day toggle above, in one go. Not limited to the cycle shown at the top.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date" required value={rangeStart}
+                onChange={(e) => setRangeStart(e.target.value)}
+                className="rounded-md border px-2 py-1.5 text-sm"
+              />
+              <span className="text-xs text-muted-foreground">to</span>
+              <input
+                type="date" required value={rangeEnd} min={rangeStart || undefined}
+                onChange={(e) => setRangeEnd(e.target.value)}
+                className="rounded-md border px-2 py-1.5 text-sm"
+              />
+              <button
+                type="submit"
+                disabled={!rangeStart || !rangeEnd || rangeEnd < rangeStart || markRangeMutation.isPending}
+                className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+              >
+                {markRangeMutation.isPending ? 'Marking…' : 'Mark away'}
+              </button>
+            </div>
+            {markRangeMutation.isSuccess && (
+              <p className="text-xs text-muted-foreground">Marked {markRangeMutation.data} day{markRangeMutation.data === 1 ? '' : 's'} away.</p>
+            )}
+          </form>
+        )}
+      </div>
 
       <p className="text-xs text-muted-foreground">
         Tap a meal to cycle: undecided → subscription meal → not subscription → freezer. For a
