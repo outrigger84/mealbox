@@ -59,6 +59,10 @@ export const calendar = {
   getRange: (start, end) => request('GET', `/calendar?start=${start}&end=${end}`),
 }
 
+export const wallplan = {
+  getRange: (start, end) => request('GET', `/wallplan?start=${start}&end=${end}`),
+}
+
 export const schedule = {
   get: () => request('GET', '/schedule'),
   update: (data) => request('PATCH', '/schedule', data),

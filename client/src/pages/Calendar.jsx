@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { dashboard as dashboardApi, mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
+import { dashboard as dashboardApi, mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi, wallplan as wallplanApi } from '@/api/client'
 import { addDays, formatDisplay, todayStr } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { UtensilsCrossed, X, Snowflake, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown } from 'lucide-react'
+import { UtensilsCrossed, X, Snowflake, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown, CalendarDays } from 'lucide-react'
 
 const ALL_MEAL_TYPES = [
   { key: 'breakfast', label: 'Breakfast', enabledField: 'breakfast_enabled' },
@@ -83,6 +83,14 @@ export default function Calendar() {
   const { data: frozenMeals, isLoading: frozenMealsLoading } = useQuery({
     queryKey: ['meals', 'frozen', 'uneaten'],
     queryFn: () => mealsApi.list('frozen=1&eaten=0'),
+  })
+  // Real-world context from Wallplan (a sibling app) for the viewed cycle — read-only, purely
+  // to help judge whether the meal plan matches what's actually happening that week. Never
+  // blocks the page: a down/slow Wallplan comes back as `unavailable`, not a query error.
+  const { data: wallplanData } = useQuery({
+    queryKey: ['wallplan-events', cycle?.cycleStart, cycle?.cycleEnd],
+    queryFn: () => wallplanApi.getRange(cycle.cycleStart, cycle.cycleEnd),
+    enabled: !!cycle,
   })
   // The rolling Demand/Supply/Surplus projection only runs forward from today (each period's
   // freezer supply is chained from the previous one's leftover) — only fetched for the
@@ -264,6 +272,8 @@ export default function Calendar() {
           </button>
         )}
       </div>
+
+      <WallplanCard data={wallplanData} />
 
       <div className={cn('rounded-lg border bg-card p-3 space-y-2', cycleOffset >= 4 && 'opacity-50')}>
         <button
@@ -525,6 +535,49 @@ export default function Calendar() {
         freezer slot with no meal picked yet, it means the period's projected freezer stock
         won't cover every freezer slot planned.
       </p>
+    </div>
+  )
+}
+
+// Read-only cross-check against Wallplan for the viewed cycle — never blocks the page (see the
+// query above): a fetch failure surfaces as a muted note rather than an error state.
+function WallplanCard({ data }) {
+  if (!data) return null
+
+  if (data.unavailable) {
+    return (
+      <div className="rounded-lg border bg-card p-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+        Wallplan is unreachable right now — real-world plans for this week aren't shown.
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border bg-card p-3 space-y-2">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+        <CalendarDays className="w-3.5 h-3.5" /> Wallplan this week
+      </p>
+      {data.events.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Nothing on Wallplan for this week.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {data.events.map((e) => (
+            <li key={e.id} className="flex items-center gap-2 text-sm">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: e.color || '#94a3b8' }} />
+              <span className="min-w-0 truncate">
+                {e.emoji && <span className="mr-1">{e.emoji}</span>}
+                {e.title}
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground shrink-0">
+                {e.end_date && e.end_date !== e.start_date
+                  ? `${formatDisplay(e.start_date)} – ${formatDisplay(e.end_date)}`
+                  : formatDisplay(e.start_date)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
