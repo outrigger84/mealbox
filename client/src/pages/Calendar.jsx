@@ -159,7 +159,9 @@ export default function Calendar() {
                             </p>
                           ) : (
                             pickable.map((m) => {
-                              const willBeExpired = m.expiry_date < date
+                              // Frozen meals (light or deep) have no meaningful expiry pressure —
+                              // freezing is what pauses it, same as Home's expiry warnings.
+                              const willBeExpired = !m.frozen_at && m.expiry_date < date
                               return (
                                 <button
                                   key={m.id}
