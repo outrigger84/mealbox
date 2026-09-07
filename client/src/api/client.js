@@ -44,6 +44,7 @@ export const nonSubscriptionDays = {
 export const mealSlots = {
   listRange: (start, end) => request('GET', `/meal-slots?start=${start}&end=${end}`),
   setStatus: (date, meal_type, status) => request('PUT', '/meal-slots', { date, meal_type, status }),
+  assignMeal: (date, meal_type, meal_id) => request('PUT', '/meal-slots/meal', { date, meal_type, meal_id }),
 }
 
 export const dashboard = {

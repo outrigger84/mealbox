@@ -67,6 +67,7 @@ db.exec(`
     date TEXT NOT NULL,
     meal_type TEXT NOT NULL CHECK (meal_type IN ('breakfast','lunch','dinner')),
     status TEXT NOT NULL CHECK (status IN ('subscription','not_subscription','freezer')),
+    meal_id INTEGER REFERENCES meals(id) ON DELETE SET NULL,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     UNIQUE(date, meal_type)
@@ -77,9 +78,14 @@ migrate()
 seed()
 
 function migrate() {
-  const columns = db.prepare("PRAGMA table_info(order_plans)").all().map((c) => c.name)
-  if (!columns.includes('received_at')) {
+  const orderPlanColumns = db.prepare("PRAGMA table_info(order_plans)").all().map((c) => c.name)
+  if (!orderPlanColumns.includes('received_at')) {
     db.exec('ALTER TABLE order_plans ADD COLUMN received_at TEXT')
+  }
+
+  const mealSlotColumns = db.prepare("PRAGMA table_info(meal_slots)").all().map((c) => c.name)
+  if (!mealSlotColumns.includes('meal_id')) {
+    db.exec('ALTER TABLE meal_slots ADD COLUMN meal_id INTEGER REFERENCES meals(id) ON DELETE SET NULL')
   }
 }
 

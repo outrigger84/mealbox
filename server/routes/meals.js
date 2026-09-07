@@ -9,7 +9,9 @@ mealsRouter.get('/', (req, res) => {
   const params = []
   if (req.query.eaten === '0') sql += ' AND eaten = 0'
   if (req.query.eaten === '1') sql += ' AND eaten = 1'
-  if (req.query.unassigned === '1') sql += ' AND assigned_date IS NULL AND eaten = 0'
+  if (req.query.unassigned === '1') {
+    sql += ` AND eaten = 0 AND id NOT IN (SELECT meal_id FROM meal_slots WHERE meal_id IS NOT NULL)`
+  }
   sql += ' ORDER BY expiry_date ASC'
   res.json(db.prepare(sql).all(...params))
 })
