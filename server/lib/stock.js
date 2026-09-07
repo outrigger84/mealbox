@@ -1,24 +1,30 @@
 import { addDays, daysBetween, toDateOnly, todayStr } from './dates.js'
 import { nextDeliveryInfo } from './schedule.js'
 
-// Number of calendar days in [startDate, endDate) that are NOT flagged as non-subscription days.
-function countEatingDays(startDate, endDate, nonSubscriptionDays) {
-  const flagged = new Set(nonSubscriptionDays.map((d) => d.date))
+// Number of calendar days in [startDate, endDate) that aren't fully "away" — a day only drops
+// out if every enabled meal type has an explicit not_subscription slot on it (mirrors "Mark
+// away", which cycles every enabled slot to not_subscription; a day with just one meal type
+// marked away, e.g. eating dinner out but still home for lunch, still needs a subscription
+// meal that day). mealSlotsByDate maps date -> { meal_type: status }, sparse — a day/meal_type
+// with no entry defaults to 'subscription', same convention as everywhere else this is read.
+function countEatingDays(startDate, endDate, mealSlotsByDate, enabledMealTypes) {
   const totalDays = daysBetween(toDateOnly(startDate), toDateOnly(endDate))
   let eating = 0
   for (let i = 0; i < totalDays; i++) {
     const day = addDays(startDate, i)
-    if (!flagged.has(day)) eating++
+    const daySlots = mealSlotsByDate[day] ?? {}
+    const fullyAway = enabledMealTypes.length > 0 && enabledMealTypes.every((mt) => daySlots[mt] === 'not_subscription')
+    if (!fullyAway) eating++
   }
   return eating
 }
 
-export function computeOrderNeed(meals, nonSubscriptionDays, scheduleConfig, today = todayStr()) {
+export function computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, scheduleConfig, today = todayStr()) {
   const { nextDeliveryDate } = nextDeliveryInfo(scheduleConfig, today)
   const followingDeliveryDate = addDays(nextDeliveryDate, 7)
 
-  const eatingDaysUntilDelivery = countEatingDays(today, nextDeliveryDate, nonSubscriptionDays)
-  const eatingDaysNextCycle = countEatingDays(nextDeliveryDate, followingDeliveryDate, nonSubscriptionDays)
+  const eatingDaysUntilDelivery = countEatingDays(today, nextDeliveryDate, mealSlotsByDate, enabledMealTypes)
+  const eatingDaysNextCycle = countEatingDays(nextDeliveryDate, followingDeliveryDate, mealSlotsByDate, enabledMealTypes)
 
   // A frozen meal is preserved past its original expiry_date, so it still counts as
   // available stock even once that date has passed.

@@ -10,10 +10,23 @@ dashboardRouter.get('/', (req, res) => {
   const today = todayStr()
   const scheduleConfig = db.prepare('SELECT * FROM schedule_config WHERE id = 1').get()
   const meals = db.prepare('SELECT * FROM meals').all()
-  const nonSubscriptionDays = db.prepare('SELECT * FROM non_subscription_days WHERE date >= ?').all(today)
+  const enabledMealTypes = ['breakfast', 'lunch', 'dinner'].filter((t) => scheduleConfig[`${t}_enabled`])
 
   const delivery = nextDeliveryInfo(scheduleConfig, today)
-  const orderNeed = computeOrderNeed(meals, nonSubscriptionDays, scheduleConfig, today)
+
+  // computeOrderNeed needs to know which days are fully "away" (see stock.js) across both the
+  // partial cycle up to the next delivery and the full cycle after it — sourced from the
+  // Calendar slot planner, not the old non_subscription_days table nothing writes to anymore.
+  const followingDeliveryDate = addDays(delivery.nextDeliveryDate, 7)
+  const orderNeedSlotRows = db.prepare(`
+    SELECT date, meal_type, status FROM meal_slots WHERE date >= ? AND date < ?
+  `).all(today, followingDeliveryDate)
+  const mealSlotsByDate = {}
+  for (const r of orderNeedSlotRows) {
+    (mealSlotsByDate[r.date] ??= {})[r.meal_type] = r.status
+  }
+
+  const orderNeed = computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, scheduleConfig, today)
   const expiryWarnings = computeExpiryWarnings(meals, today)
 
   const pendingReceipts = db.prepare(`
@@ -33,7 +46,6 @@ dashboardRouter.get('/', (req, res) => {
   // every (date, enabled meal_type) combo that isn't explicitly 'not_subscription'/'freezer'.
   // Bounded to [today, furthest relevant expiry date] since no slot beyond that could ever
   // matter for matching anyway — avoids generating an unbounded future.
-  const enabledMealTypes = ['breakfast', 'lunch', 'dinner'].filter((t) => scheduleConfig[`${t}_enabled`])
   const relevantExpiries = meals
     .filter((m) => !m.eaten && !m.frozen_at && m.expiry_date >= today)
     .map((m) => m.expiry_date)
