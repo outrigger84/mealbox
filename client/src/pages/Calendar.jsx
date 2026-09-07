@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
+import { dashboard as dashboardApi, mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
 import { addDays, formatDisplay, todayStr } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown } from 'lucide-react'
@@ -73,6 +73,10 @@ export default function Calendar() {
     queryKey: ['meals', 'frozen', 'uneaten'],
     queryFn: () => mealsApi.list('frozen=1&eaten=0'),
   })
+  const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: dashboardApi.get,
+  })
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['meal-slots'] })
@@ -127,7 +131,7 @@ export default function Calendar() {
     onSuccess: () => { invalidateAll(); setRangeStart(''); setRangeEnd(''); setRangeFormOpen(false) },
   })
 
-  if (cycleLoading || slotsLoading || scheduleLoading || frozenMealsLoading || !cycle || !scheduleConfig) {
+  if (cycleLoading || slotsLoading || scheduleLoading || frozenMealsLoading || dashboardLoading || !cycle || !scheduleConfig) {
     return <p className="text-muted-foreground">Loading…</p>
   }
 
@@ -144,19 +148,23 @@ export default function Calendar() {
   const mealsRequired = (slots ?? []).filter((s) => s.status === 'subscription').length
   const mealsDelivered = scheduleConfig.default_order_qty
   const surplus = mealsDelivered - mealsRequired
-  // Deliberately actual current freezer stock, not a forward projection: an "anticipated
-  // additions" term (meals not yet frozen but expected to need it) was tried and dropped —
-  // before a delivery decision, counting meals that aren't physically in the freezer yet as
-  // "in the freezer" was misleading. Freezer *candidates* (what needs freezing soon) are a
-  // separate concern, surfaced on Home instead. This box only subtracts what's already been
-  // committed to eating from the freezer (planned withdrawals), not what might get added.
+  // A forward projection to "how many will be sitting in the freezer once this cycle wraps
+  // up," not just what's physically frozen right now — useful when deciding whether to order
+  // less next time. deepFrozenStock is what's already frozen long-term (freeze_type 'deep';
+  // a 'light'-frozen meal is, by convention, expected to be eaten this cycle, so it's not
+  // counted as carrying over). freezerCandidates (from GET /dashboard, already correctly
+  // matched to real slot assignments — see server/lib/stock.js) covers what isn't frozen yet
+  // but is heading that way: both 'light' and 'deep' suggestions count here, on the
+  // assumption that a 'light' candidate not actually eaten as planned by cycle end just
+  // becomes a deep-freeze carryover anyway — a deliberately conservative estimate.
   const deepFrozenStock = (frozenMeals ?? []).filter((m) => m.freeze_type === 'deep').length
+  const anticipatedAdditions = (dashboardData?.freezerCandidates ?? []).length
   // A freezer-status slot whose meal has already been eaten still counts as a "planned
   // withdrawal" here (the slot row isn't cleared on eat) — self-correcting in practice
   // since an eaten meal already drops out of deepFrozenStock above, so this only risks a
   // slight under-count, never a double-count. Revisit with a meal_eaten join if it drifts.
   const plannedFreezerWithdrawals = (slots ?? []).filter((s) => s.status === 'freezer' && s.date >= today).length
-  const estimatedFreezerStock = deepFrozenStock - plannedFreezerWithdrawals
+  const estimatedFreezerStock = deepFrozenStock + anticipatedAdditions - plannedFreezerWithdrawals
 
   function handleCycle(date, meal_type, currentStatus) {
     const nextIndex = (CYCLE.indexOf(currentStatus) + 1) % CYCLE.length
