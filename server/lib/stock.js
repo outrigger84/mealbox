@@ -37,6 +37,33 @@ export function computeOrderNeed(meals, nonSubscriptionDays, scheduleConfig, tod
   }
 }
 
+// Greedily matches uneaten stock (earliest-expiring first) to planned subscription-slot
+// dates (earliest first). A meal can't be assigned to a slot on its own delivery day —
+// arrival time isn't known reliably, so consumption starts the day after delivery. A meal
+// that can't be matched to any remaining slot on or before its own expiry date will expire
+// before it's eaten under the current plan — flag it for the freezer. Slot dates are not
+// deduplicated: a day with two subscription slots (e.g. lunch and dinner) is two units of
+// capacity, not one.
+export function computeFreezerCandidates(meals, subscriptionSlotDates, today = todayStr()) {
+  const stock = [...meals]
+    .filter((m) => !m.eaten && m.expiry_date >= today)
+    .sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.id - b.id)
+
+  const availableSlots = subscriptionSlotDates.filter((d) => d >= today).sort()
+
+  const freezerCandidates = []
+  for (const meal of stock) {
+    const earliestUsable = addDays(meal.delivery_date, 1)
+    const slotIndex = availableSlots.findIndex((d) => d >= earliestUsable && d <= meal.expiry_date)
+    if (slotIndex === -1) {
+      freezerCandidates.push(meal)
+    } else {
+      availableSlots.splice(slotIndex, 1)
+    }
+  }
+  return freezerCandidates
+}
+
 export function computeExpiryWarnings(meals, today = todayStr(), warningDays = 3) {
   return meals
     .filter((m) => !m.eaten)

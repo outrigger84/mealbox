@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { dashboard } from '@/api/client'
 import { formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { AlertTriangle, Clock, PackageCheck, Truck } from 'lucide-react'
+import { AlertTriangle, Clock, PackageCheck, Truck, Snowflake } from 'lucide-react'
 
 const STATUS_STYLE = {
   order_now: 'bg-destructive/10 text-destructive border-destructive/30',
@@ -29,7 +29,7 @@ export default function Home() {
   if (isLoading) return <p className="text-muted-foreground">Loading…</p>
   if (!data) return null
 
-  const { delivery, orderNeed, expiryWarnings, pendingReceipts } = data
+  const { delivery, orderNeed, expiryWarnings, pendingReceipts, freezerCandidates } = data
 
   return (
     <div className="space-y-4 max-w-2xl">
@@ -66,6 +66,26 @@ export default function Home() {
         </p>
       </div>
 
+      {freezerCandidates?.length > 0 && (
+        <div className="rounded-lg border bg-sky-50 border-sky-200 p-4">
+          <div className="flex items-center gap-2 font-semibold text-sky-900">
+            <Snowflake className="w-5 h-5" />
+            {freezerCandidates.length} meal{freezerCandidates.length === 1 ? '' : 's'} should go in the freezer
+          </div>
+          <p className="mt-1 text-sm text-sky-800">
+            Based on your Calendar plan, these won't be eaten before they expire:
+          </p>
+          <ul className="mt-2 space-y-1 text-sm text-sky-900">
+            {freezerCandidates.map((m) => (
+              <li key={m.id} className="flex items-center justify-between rounded-md bg-white/60 px-3 py-1.5">
+                <span>{m.name}</span>
+                <span className="text-xs font-medium">expires {formatDisplay(m.expiry_date)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="rounded-lg border bg-card p-4">
         <div className="flex items-center gap-2 font-semibold text-card-foreground">
           <AlertTriangle className="w-5 h-5 text-amber-600" />
@@ -79,10 +99,7 @@ export default function Home() {
               <li key={m.id} className={cn('flex items-center justify-between rounded-md px-3 py-2 text-sm', EXPIRY_STYLE[m.status])}>
                 <span className="flex items-center gap-2">
                   <Clock className="w-4 h-4 shrink-0" />
-                  <span>
-                    {m.name}
-                    {m.unplanned && <span className="ml-2 text-xs font-semibold uppercase tracking-wide">unplanned</span>}
-                  </span>
+                  <span>{m.name}</span>
                 </span>
                 <span className="font-medium shrink-0">
                   {m.status === 'expired' ? 'Expired' : m.status === 'expires_today' ? 'Today' : `${m.daysUntilExpiry}d left`}

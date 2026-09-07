@@ -10,6 +10,7 @@ import { scheduleRouter } from './routes/schedule.js'
 import { mealsRouter } from './routes/meals.js'
 import { orderPlansRouter } from './routes/order-plans.js'
 import { nonSubscriptionDaysRouter } from './routes/non-subscription-days.js'
+import { mealSlotsRouter } from './routes/meal-slots.js'
 import { dashboardRouter } from './routes/dashboard.js'
 import { calendarRouter } from './routes/calendar.js'
 
@@ -23,6 +24,7 @@ app.use(`${BASE}/api/schedule`, scheduleRouter)
 app.use(`${BASE}/api/meals`, mealsRouter)
 app.use(`${BASE}/api/order-plans`, orderPlansRouter)
 app.use(`${BASE}/api/non-subscription-days`, nonSubscriptionDaysRouter)
+app.use(`${BASE}/api/meal-slots`, mealSlotsRouter)
 app.use(`${BASE}/api/dashboard`, dashboardRouter)
 app.use(`${BASE}/api/calendar`, calendarRouter)
 

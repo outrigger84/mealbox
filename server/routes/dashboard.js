@@ -2,7 +2,7 @@ import express from 'express'
 import db from '../db.js'
 import { todayStr } from '../lib/dates.js'
 import { nextDeliveryInfo } from '../lib/schedule.js'
-import { computeOrderNeed, computeExpiryWarnings } from '../lib/stock.js'
+import { computeOrderNeed, computeExpiryWarnings, computeFreezerCandidates } from '../lib/stock.js'
 
 export const dashboardRouter = express.Router()
 
@@ -20,5 +20,10 @@ dashboardRouter.get('/', (req, res) => {
     SELECT * FROM order_plans WHERE received_at IS NULL AND delivery_date <= ? ORDER BY delivery_date ASC
   `).all(today)
 
-  res.json({ today, delivery, orderNeed, expiryWarnings, pendingReceipts })
+  const subscriptionSlotDates = db.prepare(`
+    SELECT date FROM meal_slots WHERE status = 'subscription' AND date >= ?
+  `).all(today).map((r) => r.date)
+  const freezerCandidates = computeFreezerCandidates(meals, subscriptionSlotDates, today)
+
+  res.json({ today, delivery, orderNeed, expiryWarnings, pendingReceipts, freezerCandidates })
 })
