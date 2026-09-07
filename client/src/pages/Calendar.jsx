@@ -161,6 +161,8 @@ export default function Calendar() {
   // backward, so it falls back to a simpler same-cycle-only estimate using current actual
   // freezer stock, which won't reflect what the freezer really held back then.
   const today = todayStr()
+  const enabledTypeKeys = new Set(MEAL_TYPES.map((mt) => mt.key))
+  const enabledSlots = (slots ?? []).filter((s) => enabledTypeKeys.has(s.meal_type))
   let demand, mealsDelivered, freezerStock, surplus
   if (cycleOffset >= 0 && projection) {
     const period = projection.periods[cycleOffset]
@@ -169,14 +171,18 @@ export default function Calendar() {
     freezerStock = period.freezerStockAtStart
     surplus = period.surplus
   } else {
-    const enabledTypeKeys = new Set(MEAL_TYPES.map((mt) => mt.key))
-    const enabledSlots = (slots ?? []).filter((s) => enabledTypeKeys.has(s.meal_type))
     const notSubscriptionCount = enabledSlots.filter((s) => s.status === 'not_subscription').length
     demand = days.length * MEAL_TYPES.length - notSubscriptionCount
     mealsDelivered = scheduleConfig.default_order_qty
     freezerStock = (frozenMeals ?? []).filter((m) => m.freeze_type === 'deep').length
     surplus = mealsDelivered + freezerStock - demand
   }
+  // A freezer slot with no meal picked yet is still just an intention — it's only really
+  // backed by stock if there's enough projected freezer supply left to cover it. A slot that
+  // already has a specific deep-frozen meal assigned is unaffected by this: that physical meal
+  // either already exists or will once frozen, independent of the aggregate projection.
+  const unassignedFreezerSlotCount = enabledSlots.filter((s) => s.status === 'freezer' && !s.meal_id).length
+  const freezerShortfall = Math.max(0, unassignedFreezerSlotCount - freezerStock)
 
   function handleCycle(date, meal_type, currentStatus) {
     const nextIndex = (CYCLE.indexOf(currentStatus) + 1) % CYCLE.length
@@ -377,6 +383,13 @@ export default function Calendar() {
                   {label}
                 </button>
 
+                {status === 'freezer' && !slot?.meal_id && freezerShortfall > 0 && (
+                  <AlertTriangle
+                    className="w-3.5 h-3.5 text-destructive shrink-0"
+                    title={`Only ${freezerStock} meal${freezerStock === 1 ? '' : 's'} projected in the freezer this period, but ${unassignedFreezerSlotCount} freezer slot${unassignedFreezerSlotCount === 1 ? '' : 's'} planned with no meal picked yet — ${freezerShortfall} won't have stock to back ${freezerShortfall === 1 ? 'it' : 'them'}.`}
+                  />
+                )}
+
                 {(status === null || status === 'subscription' || status === 'freezer') && (
                   <div className="flex-1 min-w-0">
                     {slot?.meal_id ? (
@@ -498,8 +511,10 @@ export default function Calendar() {
         freezer → back to subscription. For a subscription or freezer slot, you can also pick
         which specific meal — optional and separate. Subscription picks from fresh/light-frozen
         stock, freezer picks from deep-frozen stock only.
-        <AlertTriangle className="inline w-3 h-3 text-destructive align-text-bottom" /> means that meal
-        will already be expired by that day.
+        <AlertTriangle className="inline w-3 h-3 text-destructive align-text-bottom" /> next to a
+        meal in the picker means that meal will already be expired by that day; next to a
+        freezer slot with no meal picked yet, it means the period's projected freezer stock
+        won't cover every freezer slot planned.
       </p>
     </div>
   )
