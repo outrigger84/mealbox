@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { mealSlots as mealSlotsApi, meals as mealsApi, schedule as scheduleApi } from '@/api/client'
 import { addDays, formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react'
 
 const MEAL_TYPES = [
   { key: 'breakfast', label: 'Breakfast' },
@@ -93,8 +93,11 @@ export default function Calendar() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Tap a meal to cycle: undecided → subscription meal → not subscription → freezer. If it's a
-        subscription meal, you can also pick which one from stock — that's optional and separate.
+        Tap a meal to cycle: undecided → subscription meal → not subscription → freezer. For a
+        subscription or freezer slot, you can also pick which specific meal — optional and separate.
+        Subscription picks from fresh/light-frozen stock, freezer picks from deep-frozen stock only.
+        <AlertTriangle className="inline w-3 h-3 text-destructive align-text-bottom" /> means that meal
+        will already be expired by that day.
       </p>
       {days.map((date) => (
         <div key={date} className="rounded-lg border bg-card p-3 space-y-2">
@@ -119,7 +122,7 @@ export default function Calendar() {
                   {label}
                 </button>
 
-                {status === 'subscription' && (
+                {(status === 'subscription' || status === 'freezer') && (
                   <div className="flex-1 min-w-0">
                     {slot?.meal_id ? (
                       <button
@@ -142,24 +145,41 @@ export default function Calendar() {
                       </button>
                     )}
 
-                    {isOpen && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {(unassignedMeals ?? []).length === 0 ? (
-                          <p className="text-xs text-muted-foreground">No unassigned meals in stock.</p>
-                        ) : (
-                          unassignedMeals.map((m) => (
-                            <button
-                              key={m.id}
-                              onClick={() => assignMutation.mutate({ date, meal_type: key, meal_id: m.id })}
-                              className="flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent"
-                            >
-                              {m.frozen_at && <Snowflake className="w-3 h-3 text-sky-600" />}
-                              {m.name}
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
+                    {isOpen && (() => {
+                      // A subscription slot takes fresh or light-frozen stock; a freezer slot can
+                      // only take something already deep-frozen — see server/routes/meal-slots.js.
+                      const pickable = (unassignedMeals ?? []).filter((m) =>
+                        status === 'freezer' ? m.freeze_type === 'deep' : m.freeze_type !== 'deep'
+                      )
+                      return (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {pickable.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              {status === 'freezer' ? 'No deep-frozen meals available.' : 'No unassigned meals in stock.'}
+                            </p>
+                          ) : (
+                            pickable.map((m) => {
+                              const willBeExpired = m.expiry_date < date
+                              return (
+                                <button
+                                  key={m.id}
+                                  onClick={() => assignMutation.mutate({ date, meal_type: key, meal_id: m.id })}
+                                  className={cn(
+                                    'flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent',
+                                    willBeExpired && 'border-destructive/40'
+                                  )}
+                                  title={willBeExpired ? `Expires ${formatDisplay(m.expiry_date)} — will already be expired by ${formatDisplay(date)}` : undefined}
+                                >
+                                  {willBeExpired && <AlertTriangle className="w-3 h-3 text-destructive" />}
+                                  {m.frozen_at && <Snowflake className="w-3 h-3 text-sky-600" />}
+                                  {m.name}
+                                </button>
+                              )
+                            })
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
               </div>
