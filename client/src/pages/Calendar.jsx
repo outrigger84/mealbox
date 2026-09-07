@@ -75,15 +75,20 @@ export default function Calendar() {
     queryKey: ['meals', 'frozen', 'uneaten'],
     queryFn: () => mealsApi.list('frozen=1&eaten=0'),
   })
-  const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: dashboardApi.get,
+  // The rolling Demand/Supply/Surplus projection only runs forward from today (each period's
+  // freezer supply is chained from the previous one's leftover) — only fetched for the
+  // current cycle or a future one, sized to reach whichever cycle is being viewed.
+  const { data: projection, isLoading: projectionLoading } = useQuery({
+    queryKey: ['dashboard-projection', cycleOffset],
+    queryFn: () => dashboardApi.getProjection(cycleOffset + 1),
+    enabled: cycleOffset >= 0,
   })
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['meal-slots'] })
     queryClient.invalidateQueries({ queryKey: ['meals'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-projection'] })
     queryClient.invalidateQueries({ queryKey: ['non-subscription-days'] })
   }
 
@@ -133,7 +138,7 @@ export default function Calendar() {
     onSuccess: () => { invalidateAll(); setRangeStart(''); setRangeEnd(''); setRangeFormOpen(false) },
   })
 
-  if (cycleLoading || slotsLoading || scheduleLoading || frozenMealsLoading || dashboardLoading || !cycle || !scheduleConfig) {
+  if (cycleLoading || slotsLoading || scheduleLoading || frozenMealsLoading || (cycleOffset >= 0 && projectionLoading) || !cycle || !scheduleConfig) {
     return <p className="text-muted-foreground">Loading…</p>
   }
 
@@ -143,38 +148,35 @@ export default function Calendar() {
   // A cycle is always exactly 7 days (delivery is a fixed weekday) — cycleStart..cycleEnd inclusive.
   const days = Array.from({ length: 7 }, (_, i) => addDays(cycle.cycleStart, i))
 
-  // Stat-box math for the viewed cycle. "Required"/"delivered" deliberately use the
-  // slot-level and settings-level numbers respectively (not the day-level order-need
-  // logic in stock.js, which ignores per-slot decisions) — see the plan doc for why.
+  // Stat-box math for the viewed cycle: Demand (every enabled slot except explicit
+  // not_subscription ones — a freezer-status slot still counts as demand, it's just sourced
+  // from the freezer rather than a fresh order, and which meal fills which slot can be
+  // decided later so the split doesn't matter here), Supply (meals delivered + freezer stock
+  // available), and Surplus/Deficit (Supply − Demand). For the current cycle or a future one,
+  // this comes from GET /dashboard/projection — a rolling calculation where each period's
+  // leftover surplus becomes the next period's starting freezer stock, since you can order
+  // several periods ahead and a future period's freezer supply depends on every period
+  // between now and then, not just today's actual stock (a deficit period clamps its
+  // carry-forward to 0 — no negative physical stock). A past cycle can't run that projection
+  // backward, so it falls back to a simpler same-cycle-only estimate using current actual
+  // freezer stock, which won't reflect what the freezer really held back then.
   const today = todayStr()
-  // A slot with no row defaults to "subscription" now, so required = every enabled slot in
-  // the cycle minus the explicit exceptions (not_subscription, freezer), not just an explicit
-  // 'subscription' count — matches how server/routes/dashboard.js now treats a no-row slot as
-  // demand too, for freezer-candidate matching.
-  const enabledTypeKeys = new Set(MEAL_TYPES.map((mt) => mt.key))
-  const enabledSlots = (slots ?? []).filter((s) => enabledTypeKeys.has(s.meal_type))
-  const notSubscriptionCount = enabledSlots.filter((s) => s.status === 'not_subscription').length
-  const freezerSlotCount = enabledSlots.filter((s) => s.status === 'freezer').length
-  const mealsRequired = days.length * MEAL_TYPES.length - notSubscriptionCount - freezerSlotCount
-  const mealsDelivered = scheduleConfig.default_order_qty
-  const surplus = mealsDelivered - mealsRequired
-  // A forward projection to "how many will be sitting in the freezer once this cycle wraps
-  // up," not just what's physically frozen right now — useful when deciding whether to order
-  // less next time. deepFrozenStock is what's already frozen long-term (freeze_type 'deep';
-  // a 'light'-frozen meal is, by convention, expected to be eaten this cycle, so it's not
-  // counted as carrying over). freezerCandidates (from GET /dashboard, already correctly
-  // matched to real slot assignments — see server/lib/stock.js) covers what isn't frozen yet
-  // but is heading that way: both 'light' and 'deep' suggestions count here, on the
-  // assumption that a 'light' candidate not actually eaten as planned by cycle end just
-  // becomes a deep-freeze carryover anyway — a deliberately conservative estimate.
-  const deepFrozenStock = (frozenMeals ?? []).filter((m) => m.freeze_type === 'deep').length
-  const anticipatedAdditions = (dashboardData?.freezerCandidates ?? []).length
-  // A freezer-status slot whose meal has already been eaten still counts as a "planned
-  // withdrawal" here (the slot row isn't cleared on eat) — self-correcting in practice
-  // since an eaten meal already drops out of deepFrozenStock above, so this only risks a
-  // slight under-count, never a double-count. Revisit with a meal_eaten join if it drifts.
-  const plannedFreezerWithdrawals = enabledSlots.filter((s) => s.status === 'freezer' && s.date >= today).length
-  const estimatedFreezerStock = deepFrozenStock + anticipatedAdditions - plannedFreezerWithdrawals
+  let demand, mealsDelivered, freezerStock, surplus
+  if (cycleOffset >= 0 && projection) {
+    const period = projection.periods[cycleOffset]
+    demand = period.demand
+    mealsDelivered = period.mealsDelivered
+    freezerStock = period.freezerStockAtStart
+    surplus = period.surplus
+  } else {
+    const enabledTypeKeys = new Set(MEAL_TYPES.map((mt) => mt.key))
+    const enabledSlots = (slots ?? []).filter((s) => enabledTypeKeys.has(s.meal_type))
+    const notSubscriptionCount = enabledSlots.filter((s) => s.status === 'not_subscription').length
+    demand = days.length * MEAL_TYPES.length - notSubscriptionCount
+    mealsDelivered = scheduleConfig.default_order_qty
+    freezerStock = (frozenMeals ?? []).filter((m) => m.freeze_type === 'deep').length
+    surplus = mealsDelivered + freezerStock - demand
+  }
 
   function handleCycle(date, meal_type, currentStatus) {
     const nextIndex = (CYCLE.indexOf(currentStatus) + 1) % CYCLE.length
@@ -260,15 +262,22 @@ export default function Calendar() {
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg border bg-card p-3">
               <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <UtensilsCrossed className="w-3.5 h-3.5" /> Meals required
+                <UtensilsCrossed className="w-3.5 h-3.5" /> Demand
               </p>
-              <p className="mt-1 text-xl font-semibold">{mealsRequired}</p>
+              <p className="mt-1 text-xl font-semibold">{demand}</p>
             </div>
             <div className="rounded-lg border bg-card p-3">
               <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Truck className="w-3.5 h-3.5" /> Meals delivered
+                <Truck className="w-3.5 h-3.5" /> Delivered
               </p>
               <p className="mt-1 text-xl font-semibold">{mealsDelivered}</p>
+            </div>
+            <div className="rounded-lg border bg-sky-50 border-sky-200 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-sky-900">
+                <Snowflake className="w-3.5 h-3.5" /> Freezer stock
+              </p>
+              <p className="mt-1 text-xl font-semibold text-sky-900">{freezerStock}</p>
+              {cycleOffset > 0 && <p className="text-[10px] text-sky-800">projected</p>}
             </div>
             <div className={cn(
               'rounded-lg border p-3',
@@ -282,12 +291,6 @@ export default function Calendar() {
                 {surplus >= 0 ? 'Surplus' : 'Deficit'}
               </p>
               <p className="mt-1 text-xl font-semibold">{surplus >= 0 ? `+${surplus}` : surplus}</p>
-            </div>
-            <div className="rounded-lg border bg-sky-50 border-sky-200 p-3">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-sky-900">
-                <Snowflake className="w-3.5 h-3.5" /> Est. in freezer
-              </p>
-              <p className="mt-1 text-xl font-semibold text-sky-900">{estimatedFreezerStock}</p>
             </div>
           </div>
         )}

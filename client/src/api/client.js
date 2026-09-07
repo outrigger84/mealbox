@@ -52,6 +52,7 @@ export const mealSlots = {
 
 export const dashboard = {
   get: () => request('GET', '/dashboard'),
+  getProjection: (periods) => request('GET', `/dashboard/projection?periods=${periods}`),
 }
 
 export const calendar = {

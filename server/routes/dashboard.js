@@ -59,3 +59,57 @@ dashboardRouter.get('/', (req, res) => {
 
   res.json({ today, delivery, orderNeed, expiryWarnings, pendingReceipts, freezerCandidates })
 })
+
+// Rolling order-decision projection for cycles 0..periods-1 (offset 0 = current cycle).
+// You can order up to a few periods ahead, so a future period's freezer supply depends on
+// every period between now and then, not just today's actual stock — chained rather than
+// computed independently per period. Demand = every enabled slot minus explicit
+// not_subscription ones (freezer-status slots count as demand too: they still need a meal,
+// just sourced from the freezer rather than a fresh order — which meal fills which slot can
+// be decided later, so the split doesn't matter for this count). Supply = mealsDelivered
+// (assumed as Settings' default_order_qty for every period, since a future period hasn't
+// been ordered yet) + freezerStockAtStart (real current deep-frozen stock for period 0, then
+// chained from the previous period's surplus). A deficit period clamps to 0 rather than
+// carrying a negative balance into the freezer — you can't have negative physical stock.
+dashboardRouter.get('/projection', (req, res) => {
+  const periods = Math.max(1, Math.min(12, parseInt(req.query.periods, 10) || 4))
+  const today = todayStr()
+  const scheduleConfig = db.prepare('SELECT * FROM schedule_config WHERE id = 1').get()
+  const enabledMealTypes = ['breakfast', 'lunch', 'dinner'].filter((t) => scheduleConfig[`${t}_enabled`])
+
+  let freezerStockAtStart = db.prepare(`
+    SELECT COUNT(*) AS count FROM meals WHERE eaten = 0 AND frozen_at IS NOT NULL AND freeze_type = 'deep'
+  `).get().count
+
+  const periodStmt = enabledMealTypes.length
+    ? db.prepare(`
+        SELECT status FROM meal_slots
+        WHERE date >= ? AND date <= ? AND meal_type IN (${enabledMealTypes.map(() => '?').join(',')})
+      `)
+    : null
+
+  const results = []
+  for (let offset = 0; offset < periods; offset++) {
+    const cycle = cycleBounds(scheduleConfig, today, offset)
+    const notSubscriptionCount = periodStmt
+      ? periodStmt.all(cycle.cycleStart, cycle.cycleEnd, ...enabledMealTypes).filter((r) => r.status === 'not_subscription').length
+      : 0
+    const demand = 7 * enabledMealTypes.length - notSubscriptionCount
+    const mealsDelivered = scheduleConfig.default_order_qty
+    const supply = mealsDelivered + freezerStockAtStart
+    const surplus = supply - demand
+    results.push({
+      offset,
+      cycleStart: cycle.cycleStart,
+      cycleEnd: cycle.cycleEnd,
+      demand,
+      mealsDelivered,
+      freezerStockAtStart,
+      supply,
+      surplus,
+    })
+    freezerStockAtStart = Math.max(0, surplus)
+  }
+
+  res.json({ today, periods: results })
+})
