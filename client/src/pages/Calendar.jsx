@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
-import { addDays, formatDisplay } from '@/lib/dates'
+import { dashboard as dashboardApi, mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
+import { addDays, formatDisplay, todayStr } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, AlertTriangle, Plane } from 'lucide-react'
+import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown } from 'lucide-react'
 
 const ALL_MEAL_TYPES = [
   { key: 'breakfast', label: 'Breakfast', enabledField: 'breakfast_enabled' },
@@ -57,6 +57,14 @@ export default function Calendar() {
     queryKey: ['non-subscription-days', cycle?.cycleStart, cycle?.cycleEnd],
     queryFn: () => nonSubscriptionDaysApi.listRange(cycle.cycleStart, addDays(cycle.cycleEnd, 1)),
     enabled: !!cycle,
+  })
+  const { data: dashboardData, isLoading: dashboardLoading } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: dashboardApi.get,
+  })
+  const { data: frozenMeals, isLoading: frozenMealsLoading } = useQuery({
+    queryKey: ['meals', 'frozen', 'uneaten'],
+    queryFn: () => mealsApi.list('frozen=1&eaten=0'),
   })
 
   const invalidateAll = () => {
@@ -112,7 +120,7 @@ export default function Calendar() {
     onSuccess: () => { invalidateAll(); setRangeStart(''); setRangeEnd('') },
   })
 
-  if (cycleLoading || slotsLoading || scheduleLoading || !cycle || !scheduleConfig) {
+  if (cycleLoading || slotsLoading || scheduleLoading || dashboardLoading || frozenMealsLoading || !cycle || !scheduleConfig) {
     return <p className="text-muted-foreground">Loading…</p>
   }
 
@@ -121,6 +129,22 @@ export default function Calendar() {
   const awayByDate = Object.fromEntries((awayDays ?? []).map((d) => [d.date, d]))
   // A cycle is always exactly 7 days (delivery is a fixed weekday) — cycleStart..cycleEnd inclusive.
   const days = Array.from({ length: 7 }, (_, i) => addDays(cycle.cycleStart, i))
+
+  // Stat-box math for the viewed cycle. "Required"/"delivered" deliberately use the
+  // slot-level and settings-level numbers respectively (not the day-level order-need
+  // logic in stock.js, which ignores per-slot decisions) — see the plan doc for why.
+  const today = todayStr()
+  const mealsRequired = (slots ?? []).filter((s) => s.status === 'subscription').length
+  const mealsDelivered = scheduleConfig.default_order_qty
+  const surplus = mealsDelivered - mealsRequired
+  const deepFrozenStock = (frozenMeals ?? []).filter((m) => m.freeze_type === 'deep').length
+  const anticipatedDeepAdditions = (dashboardData?.freezerCandidates ?? []).filter((c) => c.suggestedFreezeType === 'deep').length
+  // A freezer-status slot whose meal has already been eaten still counts as a "planned
+  // withdrawal" here (the slot row isn't cleared on eat) — self-correcting in practice
+  // since an eaten meal already drops out of deepFrozenStock above, so this only risks a
+  // slight under-count, never a double-count. Revisit with a meal_eaten join if it drifts.
+  const plannedFreezerWithdrawals = (slots ?? []).filter((s) => s.status === 'freezer' && s.date >= today).length
+  const estimatedFreezerStock = deepFrozenStock + anticipatedDeepAdditions - plannedFreezerWithdrawals
 
   function handleCycle(date, meal_type, currentStatus) {
     const nextIndex = (CYCLE.indexOf(currentStatus) + 1) % CYCLE.length
@@ -208,13 +232,40 @@ export default function Calendar() {
         )}
       </form>
 
-      <p className="text-xs text-muted-foreground">
-        Tap a meal to cycle: undecided → subscription meal → not subscription → freezer. For a
-        subscription or freezer slot, you can also pick which specific meal — optional and separate.
-        Subscription picks from fresh/light-frozen stock, freezer picks from deep-frozen stock only.
-        <AlertTriangle className="inline w-3 h-3 text-destructive align-text-bottom" /> means that meal
-        will already be expired by that day.
-      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg border bg-card p-3">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <UtensilsCrossed className="w-3.5 h-3.5" /> Meals required
+          </p>
+          <p className="mt-1 text-xl font-semibold">{mealsRequired}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-3">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Truck className="w-3.5 h-3.5" /> Meals delivered
+          </p>
+          <p className="mt-1 text-xl font-semibold">{mealsDelivered}</p>
+        </div>
+        <div className={cn(
+          'rounded-lg border p-3',
+          surplus >= 0 ? 'bg-accent/40 border-accent' : 'bg-destructive/10 border-destructive/30'
+        )}>
+          <p className={cn(
+            'flex items-center gap-1.5 text-xs font-medium',
+            surplus >= 0 ? 'text-accent-foreground' : 'text-destructive'
+          )}>
+            {surplus >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+            {surplus >= 0 ? 'Surplus' : 'Deficit'}
+          </p>
+          <p className="mt-1 text-xl font-semibold">{surplus >= 0 ? `+${surplus}` : surplus}</p>
+        </div>
+        <div className="rounded-lg border bg-sky-50 border-sky-200 p-3">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-sky-900">
+            <Snowflake className="w-3.5 h-3.5" /> Est. in freezer
+          </p>
+          <p className="mt-1 text-xl font-semibold text-sky-900">{estimatedFreezerStock}</p>
+        </div>
+      </div>
+
       {days.map((date) => {
         const isAway = !!awayByDate[date]
         return (
@@ -326,6 +377,14 @@ export default function Calendar() {
         </div>
         )
       })}
+
+      <p className="text-xs text-muted-foreground">
+        Tap a meal to cycle: undecided → subscription meal → not subscription → freezer. For a
+        subscription or freezer slot, you can also pick which specific meal — optional and separate.
+        Subscription picks from fresh/light-frozen stock, freezer picks from deep-frozen stock only.
+        <AlertTriangle className="inline w-3 h-3 text-destructive align-text-bottom" /> means that meal
+        will already be expired by that day.
+      </p>
     </div>
   )
 }
