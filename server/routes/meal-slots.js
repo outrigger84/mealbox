@@ -10,7 +10,7 @@ mealSlotsRouter.get('/', (req, res) => {
   const { start, end } = req.query
   if (!start || !end) return res.status(400).json({ error: 'start and end query params required' })
   res.json(db.prepare(`
-    SELECT ms.*, m.name AS meal_name, m.expiry_date AS meal_expiry_date
+    SELECT ms.*, m.name AS meal_name, m.expiry_date AS meal_expiry_date, m.freeze_type AS meal_freeze_type
     FROM meal_slots ms
     LEFT JOIN meals m ON m.id = ms.meal_id
     WHERE ms.date >= ? AND ms.date < ?
@@ -54,7 +54,7 @@ mealSlotsRouter.put('/', (req, res) => {
     db.prepare('INSERT INTO meal_slots (date, meal_type, status) VALUES (?, ?, ?)').run(date, meal_type, status)
   }
   res.json(db.prepare(`
-    SELECT ms.*, m.name AS meal_name, m.expiry_date AS meal_expiry_date
+    SELECT ms.*, m.name AS meal_name, m.expiry_date AS meal_expiry_date, m.freeze_type AS meal_freeze_type
     FROM meal_slots ms LEFT JOIN meals m ON m.id = ms.meal_id
     WHERE ms.date = ? AND ms.meal_type = ?
   `).get(date, meal_type))
@@ -101,7 +101,7 @@ mealSlotsRouter.put('/meal', (req, res) => {
   }
 
   res.json(db.prepare(`
-    SELECT ms.*, m.name AS meal_name, m.expiry_date AS meal_expiry_date
+    SELECT ms.*, m.name AS meal_name, m.expiry_date AS meal_expiry_date, m.freeze_type AS meal_freeze_type
     FROM meal_slots ms LEFT JOIN meals m ON m.id = ms.meal_id
     WHERE ms.date = ? AND ms.meal_type = ?
   `).get(date, meal_type))

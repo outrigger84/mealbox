@@ -75,6 +75,22 @@ export default function Calendar() {
     setOpenSlotKey(null)
   }
 
+  // Picking a meal that'll already be expired by the slot's date offers to freeze it first
+  // (light — it's going into a subscription slot, which only takes fresh/light-frozen stock)
+  // so it stays safe to eat instead of just being assigned as-is.
+  async function handlePick(date, meal_type, meal) {
+    const willBeExpired = !meal.frozen_at && meal.expiry_date < date
+    if (willBeExpired) {
+      const shouldFreeze = window.confirm(
+        `${meal.name} will already be expired by ${formatDisplay(date)}. Freeze it now so it's still safe to use?`
+      )
+      if (shouldFreeze) {
+        await mealsApi.freeze(meal.id, 'light')
+      }
+    }
+    assignMutation.mutate({ date, meal_type, meal_id: meal.id })
+  }
+
   return (
     <div className="space-y-2 max-w-2xl">
       <div className="rounded-lg border bg-card p-3 space-y-1">
@@ -127,9 +143,15 @@ export default function Calendar() {
                     {slot?.meal_id ? (
                       <button
                         onClick={() => setOpenSlotKey(isOpen ? null : slotKey)}
-                        className="flex items-center justify-between w-full gap-2 rounded-md bg-accent text-accent-foreground px-2.5 py-1.5 text-xs font-medium"
+                        className={cn(
+                          'flex items-center justify-between w-full gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium',
+                          slot.meal_freeze_type ? 'bg-sky-100 text-sky-800' : 'bg-accent text-accent-foreground'
+                        )}
                       >
-                        <span className="truncate">{slot.meal_name}</span>
+                        <span className="flex items-center gap-1 min-w-0 truncate">
+                          {slot.meal_freeze_type && <Snowflake className="w-3 h-3 shrink-0" />}
+                          {slot.meal_name}
+                        </span>
                         <X
                           className="w-3.5 h-3.5 shrink-0"
                           onClick={(e) => { e.stopPropagation(); assignMutation.mutate({ date, meal_type: key, meal_id: null }) }}
@@ -165,7 +187,7 @@ export default function Calendar() {
                               return (
                                 <button
                                   key={m.id}
-                                  onClick={() => assignMutation.mutate({ date, meal_type: key, meal_id: m.id })}
+                                  onClick={() => handlePick(date, key, m)}
                                   className={cn(
                                     'flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent',
                                     willBeExpired && 'border-destructive/40'
