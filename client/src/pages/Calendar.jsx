@@ -168,6 +168,14 @@ export default function Calendar() {
   const awayByDate = Object.fromEntries((awayDays ?? []).map((d) => [d.date, d]))
   // A cycle is always exactly 7 days (delivery is a fixed weekday) — cycleStart..cycleEnd inclusive.
   const days = Array.from({ length: 7 }, (_, i) => addDays(cycle.cycleStart, i))
+  // Wallplan events per day (a multi-day event appears on every date it spans), for the
+  // real-world-context bar rendered inside each day's own card rather than as one weekly list.
+  const wallplanByDate = Object.fromEntries(
+    days.map((date) => [
+      date,
+      (wallplanData?.events ?? []).filter((e) => e.start_date <= date && (e.end_date || e.start_date) >= date),
+    ])
+  )
 
   // Stat-box math for the viewed cycle: Demand (every enabled slot except explicit
   // not_subscription ones — a freezer-status slot still counts as demand, it's just sourced
@@ -277,7 +285,7 @@ export default function Calendar() {
         )}
       </div>
 
-      <WallplanCard data={wallplanData} />
+      <WallplanUnavailableNotice data={wallplanData} />
 
       <div className={cn('rounded-lg border bg-card p-3 space-y-2', cycleOffset >= 4 && 'opacity-50')}>
         <button
@@ -376,6 +384,20 @@ export default function Calendar() {
               </button>
             </div>
           </div>
+          {wallplanByDate[date].length > 0 && (
+            <div className="space-y-1">
+              {wallplanByDate[date].map((e) => (
+                <div
+                  key={e.id}
+                  className="rounded-md px-2.5 py-1.5 text-xs font-medium text-white truncate"
+                  style={{ backgroundColor: e.color || '#64748b' }}
+                >
+                  {e.emoji && <span className="mr-1">{e.emoji}</span>}
+                  {e.title}
+                </div>
+              ))}
+            </div>
+          )}
           {MEAL_TYPES.map(({ key, label }) => {
             const slotKey = `${date}|${key}`
             const slot = slotByKey[slotKey]
@@ -550,45 +572,15 @@ export default function Calendar() {
   )
 }
 
-// Read-only cross-check against Wallplan for the viewed cycle — never blocks the page (see the
-// query above): a fetch failure surfaces as a muted note rather than an error state.
-function WallplanCard({ data }) {
-  if (!data) return null
-
-  if (data.unavailable) {
-    return (
-      <div className="rounded-lg border bg-card p-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-        <CalendarDays className="w-3.5 h-3.5 shrink-0" />
-        Wallplan is unreachable right now — real-world plans for this week aren't shown.
-      </div>
-    )
-  }
-
+// Wallplan events themselves render per-day, inline in each day's own card (see
+// wallplanByDate above) — this only surfaces the "can't reach Wallplan" case up top, since an
+// empty per-day bar area is indistinguishable from "nothing's on for that day" otherwise.
+function WallplanUnavailableNotice({ data }) {
+  if (!data?.unavailable) return null
   return (
-    <div className="rounded-lg border bg-card p-3 space-y-2">
-      <p className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-        <CalendarDays className="w-3.5 h-3.5" /> Wallplan this week
-      </p>
-      {data.events.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Nothing on Wallplan for this week.</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {data.events.map((e) => (
-            <li key={e.id} className="flex items-center gap-2 text-sm">
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: e.color || '#94a3b8' }} />
-              <span className="min-w-0 truncate">
-                {e.emoji && <span className="mr-1">{e.emoji}</span>}
-                {e.title}
-              </span>
-              <span className="ml-auto text-xs text-muted-foreground shrink-0">
-                {e.end_date && e.end_date !== e.start_date
-                  ? `${formatDisplay(e.start_date)} – ${formatDisplay(e.end_date)}`
-                  : formatDisplay(e.start_date)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className="rounded-lg border bg-card p-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+      Wallplan is unreachable right now — real-world plans aren't shown below.
     </div>
   )
 }
