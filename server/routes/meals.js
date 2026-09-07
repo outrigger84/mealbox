@@ -68,6 +68,15 @@ mealsRouter.post('/:id/eat', (req, res) => {
   res.json(db.prepare('SELECT * FROM meals WHERE id = ?').get(req.params.id))
 })
 
+mealsRouter.post('/:id/uneat', (req, res) => {
+  const current = db.prepare('SELECT * FROM meals WHERE id = ?').get(req.params.id)
+  if (!current) return res.status(404).json({ error: 'Not found' })
+  db.prepare(`
+    UPDATE meals SET eaten = 0, eaten_date = NULL, updated_at = datetime('now') WHERE id = ?
+  `).run(req.params.id)
+  res.json(db.prepare('SELECT * FROM meals WHERE id = ?').get(req.params.id))
+})
+
 mealsRouter.post('/:id/freeze', (req, res) => {
   const current = db.prepare('SELECT * FROM meals WHERE id = ?').get(req.params.id)
   if (!current) return res.status(404).json({ error: 'Not found' })

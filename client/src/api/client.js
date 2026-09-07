@@ -27,6 +27,7 @@ export const meals = {
   ...makeEntity('meals'),
   batchCreate: (data) => request('POST', '/meals/batch', data),
   markEaten: (id) => request('POST', `/meals/${id}/eat`),
+  markUneaten: (id) => request('POST', `/meals/${id}/uneat`),
   freeze: (id, freeze_type) => request('POST', `/meals/${id}/freeze`, { freeze_type }),
   unfreeze: (id) => request('POST', `/meals/${id}/unfreeze`),
 }

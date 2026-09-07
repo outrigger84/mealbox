@@ -4,12 +4,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { meals as mealsApi } from '@/api/client'
 import { todayStr, addDays, formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, Check, X, Truck, Snowflake } from 'lucide-react'
+import { Plus, Trash2, Check, X, Truck, Snowflake, Undo2 } from 'lucide-react'
 
 const FILTERS = [
   { key: 'all', label: 'All', query: 'eaten=0' },
   { key: 'unassigned', label: 'Unassigned', query: 'unassigned=1' },
   { key: 'freezer', label: 'Freezer', query: 'frozen=1&eaten=0' },
+  { key: 'eaten', label: 'Eaten', query: 'eaten=1' },
 ]
 
 export default function Inventory() {
@@ -36,6 +37,10 @@ export default function Inventory() {
   })
   const unfreezeMutation = useMutation({
     mutationFn: (id) => mealsApi.unfreeze(id),
+    onSuccess: () => { invalidate(); invalidateDashboard() },
+  })
+  const uneatMutation = useMutation({
+    mutationFn: (id) => mealsApi.markUneaten(id),
     onSuccess: () => { invalidate(); invalidateDashboard() },
   })
 
@@ -97,6 +102,24 @@ export default function Inventory() {
             onUnfreeze={unfreezeMutation.mutate}
           />
         </div>
+      ) : filter === 'eaten' ? (
+        <ul className="space-y-2">
+          {mealList.map((m) => (
+            <li key={m.id} className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3">
+              <div className="min-w-0">
+                <p className="font-medium truncate">{m.name}</p>
+                <p className="text-xs text-muted-foreground">Eaten {formatDisplay(m.eaten_date)}</p>
+              </div>
+              <button
+                onClick={() => uneatMutation.mutate(m.id)}
+                className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium shrink-0"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                Undo
+              </button>
+            </li>
+          ))}
+        </ul>
       ) : (
         <ul className="space-y-2">
           {mealList.map((m) => (
@@ -111,14 +134,15 @@ export default function Inventory() {
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => eatMutation.mutate(m.id)}
-                  className="flex items-center justify-center w-10 h-10 rounded-full bg-accent text-accent-foreground"
+                  className="flex items-center gap-1.5 rounded-md bg-accent text-accent-foreground px-2.5 py-1.5 text-xs font-medium"
                   aria-label="Mark eaten"
                 >
-                  <Check className="w-5 h-5" />
+                  <Check className="w-4 h-4" />
+                  Eaten
                 </button>
                 <button
                   onClick={() => deleteMutation.mutate(m.id)}
-                  className="flex items-center justify-center w-10 h-10 rounded-full bg-destructive/10 text-destructive"
+                  className="flex items-center justify-center w-9 h-9 rounded-full bg-destructive/10 text-destructive"
                   aria-label="Delete"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -153,10 +177,11 @@ function FreezerGroup({ label, hint, meals, onEat, onUnfreeze }) {
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => onEat(m.id)}
-                  className="flex items-center justify-center w-10 h-10 rounded-full bg-accent text-accent-foreground"
+                  className="flex items-center gap-1.5 rounded-md bg-accent text-accent-foreground px-2.5 py-1.5 text-xs font-medium"
                   aria-label="Mark eaten"
                 >
-                  <Check className="w-5 h-5" />
+                  <Check className="w-4 h-4" />
+                  Eaten
                 </button>
                 <button
                   onClick={() => onUnfreeze(m.id)}
