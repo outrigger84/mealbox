@@ -149,9 +149,8 @@ export default function Calendar() {
   const today = todayStr()
   // A slot with no row defaults to "subscription" now, so required = every enabled slot in
   // the cycle minus the explicit exceptions (not_subscription, freezer), not just an explicit
-  // 'subscription' count. Note: server-side freezer-candidate matching (stock.js) still only
-  // recognizes explicit 'subscription' rows as demand — a known gap between this box and that
-  // matching until the default-status change is threaded through there too.
+  // 'subscription' count — matches how server/routes/dashboard.js now treats a no-row slot as
+  // demand too, for freezer-candidate matching.
   const enabledTypeKeys = new Set(MEAL_TYPES.map((mt) => mt.key))
   const enabledSlots = (slots ?? []).filter((s) => enabledTypeKeys.has(s.meal_type))
   const notSubscriptionCount = enabledSlots.filter((s) => s.status === 'not_subscription').length
@@ -239,6 +238,14 @@ export default function Calendar() {
         <p className="text-xs text-muted-foreground text-center">
           Delivered: {formatDisplay(cycle.deliveryDate)} · Order by: {formatDisplay(cycle.orderByDate)} (for {formatDisplay(cycle.nextDeliveryDate)}'s delivery)
         </p>
+        {cycleOffset !== 0 && (
+          <button
+            onClick={() => setCycleOffset(0)}
+            className="w-full text-center text-xs font-medium text-accent-foreground hover:underline"
+          >
+            Jump to today
+          </button>
+        )}
       </div>
 
       <div className="rounded-lg border bg-card p-3 space-y-2">
