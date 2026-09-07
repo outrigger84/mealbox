@@ -353,13 +353,23 @@ export default function Calendar() {
             const status = slot?.status ?? null
             const Icon = STATUS_ICON[status]
             const isOpen = openSlotKey === slotKey
+            // setStatusMutation is shared by every slot's button — without this guard, a
+            // second tap on the same slot before the first request's refetch lands would read
+            // the still-stale `status` and can compute the exact same "next" transition,
+            // silently no-opping instead of advancing. Disabling the tapped slot while its own
+            // request is in flight (matched by date+meal_type, not just "any mutation pending")
+            // avoids that without blocking taps on other slots.
+            const isSlotPending = setStatusMutation.isPending
+              && setStatusMutation.variables?.date === date
+              && setStatusMutation.variables?.meal_type === key
 
             return (
               <div key={key} className="flex items-center gap-2">
                 <button
                   onClick={() => handleCycle(date, key, status)}
+                  disabled={isSlotPending}
                   className={cn(
-                    'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors shrink-0 w-28',
+                    'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors shrink-0 w-28 disabled:opacity-50',
                     STATUS_STYLE[status]
                   )}
                 >
