@@ -250,7 +250,7 @@ export default function Calendar() {
         )}
       </div>
 
-      <div className="rounded-lg border bg-card p-3 space-y-2">
+      <div className={cn('rounded-lg border bg-card p-3 space-y-2', cycleOffset >= 4 && 'opacity-50')}>
         <button
           onClick={() => setStatsOpen((o) => !o)}
           className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground w-full"
@@ -258,6 +258,11 @@ export default function Calendar() {
           Order-decision stats
           {statsOpen ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
         </button>
+        {cycleOffset >= 4 && (
+          <p className="text-xs text-muted-foreground">
+            Beyond the ~3 periods you can order ahead for — the further out, the more this projection is just compounding the same default order-qty assumption.
+          </p>
+        )}
         {statsOpen && (
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg border bg-card p-3">
