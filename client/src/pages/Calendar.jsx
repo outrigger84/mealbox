@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { dashboard as dashboardApi, mealSlots as mealSlotsApi, meals as mealsApi, nonSubscriptionDays as nonSubscriptionDaysApi, schedule as scheduleApi } from '@/api/client'
 import { addDays, formatDisplay, todayStr } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown } from 'lucide-react'
+import { UtensilsCrossed, X, Snowflake, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown } from 'lucide-react'
 
 const ALL_MEAL_TYPES = [
   { key: 'breakfast', label: 'Breakfast', enabledField: 'breakfast_enabled' },
@@ -11,18 +11,20 @@ const ALL_MEAL_TYPES = [
   { key: 'dinner', label: 'Dinner', enabledField: 'dinner_enabled' },
 ]
 
-// Tap cycles through: undecided (no row) -> subscription -> not_subscription -> freezer -> undecided
-const CYCLE = [null, 'subscription', 'not_subscription', 'freezer']
+// A slot with no row defaults to "subscription" (not "undecided") — you only tap to mark an
+// exception. Tap cycles through: subscription (no row) -> not_subscription -> freezer -> back
+// to subscription (deletes the row again).
+const CYCLE = [null, 'not_subscription', 'freezer']
 
 const STATUS_STYLE = {
-  null: 'bg-muted text-muted-foreground',
+  null: 'bg-accent text-accent-foreground',
   subscription: 'bg-accent text-accent-foreground',
   not_subscription: 'bg-secondary text-muted-foreground line-through',
   freezer: 'bg-sky-100 text-sky-800',
 }
 
 const STATUS_ICON = {
-  null: Circle,
+  null: UtensilsCrossed,
   subscription: UtensilsCrossed,
   not_subscription: X,
   freezer: Snowflake,
@@ -145,7 +147,16 @@ export default function Calendar() {
   // slot-level and settings-level numbers respectively (not the day-level order-need
   // logic in stock.js, which ignores per-slot decisions) — see the plan doc for why.
   const today = todayStr()
-  const mealsRequired = (slots ?? []).filter((s) => s.status === 'subscription').length
+  // A slot with no row defaults to "subscription" now, so required = every enabled slot in
+  // the cycle minus the explicit exceptions (not_subscription, freezer), not just an explicit
+  // 'subscription' count. Note: server-side freezer-candidate matching (stock.js) still only
+  // recognizes explicit 'subscription' rows as demand — a known gap between this box and that
+  // matching until the default-status change is threaded through there too.
+  const enabledTypeKeys = new Set(MEAL_TYPES.map((mt) => mt.key))
+  const enabledSlots = (slots ?? []).filter((s) => enabledTypeKeys.has(s.meal_type))
+  const notSubscriptionCount = enabledSlots.filter((s) => s.status === 'not_subscription').length
+  const freezerSlotCount = enabledSlots.filter((s) => s.status === 'freezer').length
+  const mealsRequired = days.length * MEAL_TYPES.length - notSubscriptionCount - freezerSlotCount
   const mealsDelivered = scheduleConfig.default_order_qty
   const surplus = mealsDelivered - mealsRequired
   // A forward projection to "how many will be sitting in the freezer once this cycle wraps
@@ -163,7 +174,7 @@ export default function Calendar() {
   // withdrawal" here (the slot row isn't cleared on eat) — self-correcting in practice
   // since an eaten meal already drops out of deepFrozenStock above, so this only risks a
   // slight under-count, never a double-count. Revisit with a meal_eaten join if it drifts.
-  const plannedFreezerWithdrawals = (slots ?? []).filter((s) => s.status === 'freezer' && s.date >= today).length
+  const plannedFreezerWithdrawals = enabledSlots.filter((s) => s.status === 'freezer' && s.date >= today).length
   const estimatedFreezerStock = deepFrozenStock + anticipatedAdditions - plannedFreezerWithdrawals
 
   function handleCycle(date, meal_type, currentStatus) {
@@ -341,7 +352,7 @@ export default function Calendar() {
                   {label}
                 </button>
 
-                {(status === 'subscription' || status === 'freezer') && (
+                {(status === null || status === 'subscription' || status === 'freezer') && (
                   <div className="flex-1 min-w-0">
                     {slot?.meal_id ? (
                       <button
@@ -458,9 +469,10 @@ export default function Calendar() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Tap a meal to cycle: undecided → subscription meal → not subscription → freezer. For a
-        subscription or freezer slot, you can also pick which specific meal — optional and separate.
-        Subscription picks from fresh/light-frozen stock, freezer picks from deep-frozen stock only.
+        Every slot defaults to subscription — tap to cycle: subscription → not subscription →
+        freezer → back to subscription. For a subscription or freezer slot, you can also pick
+        which specific meal — optional and separate. Subscription picks from fresh/light-frozen
+        stock, freezer picks from deep-frozen stock only.
         <AlertTriangle className="inline w-3 h-3 text-destructive align-text-bottom" /> means that meal
         will already be expired by that day.
       </p>

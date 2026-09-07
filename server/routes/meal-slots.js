@@ -17,12 +17,13 @@ mealSlotsRouter.get('/', (req, res) => {
   `).all(start, end))
 })
 
-// Upsert a slot's status, or delete it (status: null) to reset back to "undecided",
-// which is represented by the absence of a row rather than a stored value. Moving a slot to
-// 'not_subscription' (or back to undecided) always clears any meal assignment it had. Moving
-// between 'subscription' and 'freezer' keeps an existing assignment only if it still matches
-// that status's freeze-type rule (subscription: fresh/light; freezer: deep) — otherwise it's
-// cleared here too, so a slot never silently ends up holding a mismatched meal.
+// Upsert a slot's status, or delete it (status: null) to reset back to the default
+// "subscription" status, which — like the old "undecided" — is represented by the absence of
+// a row rather than a stored value. Moving a slot to 'not_subscription' (or back to the
+// no-row default) always clears any meal assignment it had. Moving between 'subscription' and
+// 'freezer' keeps an existing assignment only if it still matches that status's freeze-type
+// rule (subscription: fresh/light; freezer: deep) — otherwise it's cleared here too, so a
+// slot never silently ends up holding a mismatched meal.
 mealSlotsRouter.put('/', (req, res) => {
   const { date, meal_type, status } = req.body
   if (!date || !MEAL_TYPES.includes(meal_type)) {
@@ -72,8 +73,14 @@ mealSlotsRouter.put('/meal', (req, res) => {
     return res.status(400).json({ error: 'valid date and meal_type are required' })
   }
 
-  const slot = db.prepare('SELECT * FROM meal_slots WHERE date = ? AND meal_type = ?').get(date, meal_type)
-  if (!slot || !['subscription', 'freezer'].includes(slot.status)) {
+  // No row = default "subscription" status now (see PUT / above) — create the row here since
+  // assigning a meal needs somewhere to attach meal_id to. An explicit non-default status
+  // (not_subscription) still blocks assignment.
+  let slot = db.prepare('SELECT * FROM meal_slots WHERE date = ? AND meal_type = ?').get(date, meal_type)
+  if (!slot) {
+    const result = db.prepare('INSERT INTO meal_slots (date, meal_type, status) VALUES (?, ?, ?)').run(date, meal_type, 'subscription')
+    slot = db.prepare('SELECT * FROM meal_slots WHERE id = ?').get(result.lastInsertRowid)
+  } else if (!['subscription', 'freezer'].includes(slot.status)) {
     return res.status(400).json({ error: 'slot must be set to subscription or freezer before assigning a meal' })
   }
 
