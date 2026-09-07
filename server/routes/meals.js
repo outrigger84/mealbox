@@ -5,15 +5,26 @@ import { todayStr } from '../lib/dates.js'
 export const mealsRouter = express.Router()
 
 mealsRouter.get('/', (req, res) => {
-  let sql = 'SELECT * FROM meals WHERE 1=1'
+  // Always joined (not just for ?assigned=1) so any filter's results can show which slot a
+  // meal is in, if any — a meal_id is referenced by at most one meal_slots row (enforced in
+  // meal-slots.js), so this is a safe one-to-zero-or-one join, never row multiplication.
+  let sql = `
+    SELECT m.*, ms.date AS assigned_slot_date, ms.meal_type AS assigned_slot_meal_type
+    FROM meals m
+    LEFT JOIN meal_slots ms ON ms.meal_id = m.id
+    WHERE 1=1
+  `
   const params = []
-  if (req.query.eaten === '0') sql += ' AND eaten = 0'
-  if (req.query.eaten === '1') sql += ' AND eaten = 1'
+  if (req.query.eaten === '0') sql += ' AND m.eaten = 0'
+  if (req.query.eaten === '1') sql += ' AND m.eaten = 1'
   if (req.query.unassigned === '1') {
-    sql += ` AND eaten = 0 AND id NOT IN (SELECT meal_id FROM meal_slots WHERE meal_id IS NOT NULL)`
+    sql += ` AND m.eaten = 0 AND m.id NOT IN (SELECT meal_id FROM meal_slots WHERE meal_id IS NOT NULL)`
   }
-  if (req.query.frozen === '1') sql += ' AND frozen_at IS NOT NULL'
-  sql += ' ORDER BY expiry_date ASC'
+  if (req.query.assigned === '1') {
+    sql += ` AND m.eaten = 0 AND m.id IN (SELECT meal_id FROM meal_slots WHERE meal_id IS NOT NULL)`
+  }
+  if (req.query.frozen === '1') sql += ' AND m.frozen_at IS NOT NULL'
+  sql += ' ORDER BY m.expiry_date ASC'
   res.json(db.prepare(sql).all(...params))
 })
 

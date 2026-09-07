@@ -4,18 +4,114 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { meals as mealsApi } from '@/api/client'
 import { todayStr, addDays, formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, Check, X, Truck, Snowflake, Undo2 } from 'lucide-react'
+import {
+  Plus, Trash2, Check, X, Truck, Snowflake, Undo2,
+  Package, Clock, CalendarCheck, ChevronUp, ChevronDown,
+  Coffee, Sandwich, UtensilsCrossed,
+} from 'lucide-react'
 
 const FILTERS = [
   { key: 'all', label: 'All', query: 'eaten=0' },
   { key: 'unassigned', label: 'Unassigned', query: 'unassigned=1' },
+  { key: 'assigned', label: 'Assigned', query: 'assigned=1' },
   { key: 'freezer', label: 'Freezer', query: 'frozen=1&eaten=0' },
   { key: 'eaten', label: 'Eaten', query: 'eaten=1' },
 ]
 
+const MEAL_TYPE_ICONS = { breakfast: Coffee, lunch: Sandwich, dinner: UtensilsCrossed }
+const MEAL_TYPE_LABELS = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner' }
+
+// Summary numbers for the currently-viewed tab, derived from the same list already
+// fetched for it — no extra requests, mirroring the Calendar page's decision-stats panel.
+function tabStats(filter, mealList) {
+  const expiryCutoff = addDays(todayStr(), 3)
+  const expiringSoon = (m) => !m.frozen_at && m.expiry_date <= expiryCutoff
+
+  if (filter === 'all') {
+    return [
+      { key: 'total', label: 'Total', icon: Package, value: mealList.length },
+      { key: 'expiring', label: 'Expiring ≤3d', icon: Clock, value: mealList.filter(expiringSoon).length, warn: true },
+      { key: 'frozen', label: 'Frozen', icon: Snowflake, value: mealList.filter((m) => m.frozen_at).length },
+      { key: 'assigned', label: 'Assigned', icon: CalendarCheck, value: mealList.filter((m) => m.assigned_slot_date).length },
+    ]
+  }
+  if (filter === 'unassigned') {
+    return [
+      { key: 'total', label: 'Total', icon: Package, value: mealList.length },
+      { key: 'expiring', label: 'Expiring ≤3d', icon: Clock, value: mealList.filter(expiringSoon).length, warn: true },
+    ]
+  }
+  if (filter === 'assigned') {
+    return [
+      { key: 'total', label: 'Total', icon: CalendarCheck, value: mealList.length },
+      ...['breakfast', 'lunch', 'dinner'].map((mt) => ({
+        key: mt, label: MEAL_TYPE_LABELS[mt], icon: MEAL_TYPE_ICONS[mt],
+        value: mealList.filter((m) => m.assigned_slot_meal_type === mt).length,
+      })),
+    ]
+  }
+  if (filter === 'freezer') {
+    return [
+      { key: 'light', label: 'Light freeze', icon: Snowflake, value: mealList.filter((m) => m.freeze_type === 'light').length },
+      { key: 'deep', label: 'Deep freeze', icon: Snowflake, value: mealList.filter((m) => m.freeze_type === 'deep').length },
+      { key: 'total', label: 'Total', icon: Package, value: mealList.length },
+    ]
+  }
+  // eaten
+  return [
+    { key: 'total', label: 'Total eaten', icon: Check, value: mealList.length },
+  ]
+}
+
+function TabStats({ filter, mealList, open, onToggle }) {
+  const stats = tabStats(filter, mealList)
+  return (
+    <div className="rounded-lg border bg-card p-3 space-y-2">
+      <button
+        onClick={onToggle}
+        className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground w-full"
+      >
+        Summary stats
+        {open ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
+      </button>
+      {open && (
+        <div className={cn(
+          'grid gap-2',
+          stats.length === 1 && 'grid-cols-1',
+          stats.length === 2 && 'grid-cols-2',
+          stats.length === 3 && 'grid-cols-3',
+          stats.length >= 4 && 'grid-cols-4'
+        )}>
+          {stats.map((s) => {
+            const Icon = s.icon
+            return (
+              <div
+                key={s.key}
+                className={cn(
+                  'rounded-lg border p-3',
+                  s.warn && s.value > 0 ? 'bg-destructive/10 border-destructive/30' : 'bg-card'
+                )}
+              >
+                <p className={cn(
+                  'flex items-center gap-1.5 text-xs font-medium',
+                  s.warn && s.value > 0 ? 'text-destructive' : 'text-muted-foreground'
+                )}>
+                  <Icon className="w-3.5 h-3.5 shrink-0" /> {s.label}
+                </p>
+                <p className="mt-1 text-xl font-semibold">{s.value}</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Inventory() {
   const [filter, setFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
+  const [statsOpen, setStatsOpen] = useState(true)
   const queryClient = useQueryClient()
 
   const activeQuery = FILTERS.find((f) => f.key === filter).query
@@ -81,6 +177,10 @@ export default function Inventory() {
 
       {showForm && <AddMealForm onDone={() => { setShowForm(false); invalidate(); invalidateDashboard() }} />}
 
+      {!isLoading && (
+        <TabStats filter={filter} mealList={mealList} open={statsOpen} onToggle={() => setStatsOpen((o) => !o)} />
+      )}
+
       {isLoading ? (
         <p className="text-muted-foreground">Loading…</p>
       ) : mealList.length === 0 ? (
@@ -128,7 +228,9 @@ export default function Inventory() {
                 <p className="font-medium truncate">{m.name}</p>
                 <p className="text-xs text-muted-foreground">
                   Expires {formatDisplay(m.expiry_date)}
-                  {m.assigned_date && <> · Planned for {formatDisplay(m.assigned_date)}</>}
+                  {m.assigned_slot_date && (
+                    <> · {MEAL_TYPE_LABELS[m.assigned_slot_meal_type]} {formatDisplay(m.assigned_slot_date)}</>
+                  )}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
