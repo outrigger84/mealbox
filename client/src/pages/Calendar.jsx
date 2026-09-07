@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { mealSlots as mealSlotsApi, meals as mealsApi } from '@/api/client'
-import { todayStr, addDays, formatDisplay } from '@/lib/dates'
+import { mealSlots as mealSlotsApi, meals as mealsApi, schedule as scheduleApi } from '@/api/client'
+import { addDays, formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { UtensilsCrossed, X, Snowflake, Circle, Plus } from 'lucide-react'
+import { UtensilsCrossed, X, Snowflake, Circle, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
 
-const RANGE_DAYS = 14
 const MEAL_TYPES = [
   { key: 'breakfast', label: 'Breakfast' },
   { key: 'lunch', label: 'Lunch' },
@@ -30,14 +29,19 @@ const STATUS_ICON = {
 }
 
 export default function Calendar() {
+  const [cycleOffset, setCycleOffset] = useState(0)
   const [openSlotKey, setOpenSlotKey] = useState(null)
-  const start = todayStr()
-  const end = addDays(start, RANGE_DAYS)
   const queryClient = useQueryClient()
 
-  const { data: slots, isLoading } = useQuery({
-    queryKey: ['meal-slots', start, end],
-    queryFn: () => mealSlotsApi.listRange(start, end),
+  const { data: cycle, isLoading: cycleLoading } = useQuery({
+    queryKey: ['calendar-cycle', cycleOffset],
+    queryFn: () => scheduleApi.getCycle(cycleOffset),
+  })
+
+  const { data: slots, isLoading: slotsLoading } = useQuery({
+    queryKey: ['meal-slots', cycle?.cycleStart, cycle?.cycleEnd],
+    queryFn: () => mealSlotsApi.listRange(cycle.cycleStart, addDays(cycle.cycleEnd, 1)),
+    enabled: !!cycle,
   })
   const { data: unassignedMeals } = useQuery({
     queryKey: ['meals', 'unassigned'],
@@ -59,10 +63,11 @@ export default function Calendar() {
     onSuccess: () => { invalidateAll(); setOpenSlotKey(null) },
   })
 
-  if (isLoading) return <p className="text-muted-foreground">Loading…</p>
+  if (cycleLoading || slotsLoading || !cycle) return <p className="text-muted-foreground">Loading…</p>
 
   const slotByKey = Object.fromEntries((slots ?? []).map((s) => [`${s.date}|${s.meal_type}`, s]))
-  const days = Array.from({ length: RANGE_DAYS }, (_, i) => addDays(start, i))
+  // A cycle is always exactly 7 days (delivery is a fixed weekday) — cycleStart..cycleEnd inclusive.
+  const days = Array.from({ length: 7 }, (_, i) => addDays(cycle.cycleStart, i))
 
   function handleCycle(date, meal_type, currentStatus) {
     const nextIndex = (CYCLE.indexOf(currentStatus) + 1) % CYCLE.length
@@ -72,6 +77,21 @@ export default function Calendar() {
 
   return (
     <div className="space-y-2 max-w-2xl">
+      <div className="rounded-lg border bg-card p-3 space-y-1">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setCycleOffset((o) => o - 1)} className="p-1 rounded-md hover:bg-muted" aria-label="Previous cycle">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <p className="font-semibold text-sm">{formatDisplay(cycle.cycleStart)} – {formatDisplay(cycle.cycleEnd)}</p>
+          <button onClick={() => setCycleOffset((o) => o + 1)} className="p-1 rounded-md hover:bg-muted" aria-label="Next cycle">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground text-center">
+          Delivered: {formatDisplay(cycle.deliveryDate)} · Order by: {formatDisplay(cycle.orderByDate)} (for {formatDisplay(cycle.nextDeliveryDate)}'s delivery)
+        </p>
+      </div>
+
       <p className="text-xs text-muted-foreground">
         Tap a meal to cycle: undecided → subscription meal → not subscription → freezer. If it's a
         subscription meal, you can also pick which one from stock — that's optional and separate.
@@ -131,8 +151,9 @@ export default function Calendar() {
                             <button
                               key={m.id}
                               onClick={() => assignMutation.mutate({ date, meal_type: key, meal_id: m.id })}
-                              className="rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent"
+                              className="flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent"
                             >
+                              {m.frozen_at && <Snowflake className="w-3 h-3 text-sky-600" />}
                               {m.name}
                             </button>
                           ))

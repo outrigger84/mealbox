@@ -1,11 +1,19 @@
 import express from 'express'
 import db from '../db.js'
+import { cycleBounds } from '../lib/schedule.js'
+import { todayStr } from '../lib/dates.js'
 
 export const scheduleRouter = express.Router()
 
 scheduleRouter.get('/', (req, res) => {
   const config = db.prepare('SELECT * FROM schedule_config WHERE id = 1').get()
   res.json(config)
+})
+
+scheduleRouter.get('/cycle', (req, res) => {
+  const config = db.prepare('SELECT * FROM schedule_config WHERE id = 1').get()
+  const offset = req.query.offset ? parseInt(req.query.offset, 10) : 0
+  res.json(cycleBounds(config, todayStr(), offset))
 })
 
 scheduleRouter.patch('/', (req, res) => {

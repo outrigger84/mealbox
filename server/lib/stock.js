@@ -20,7 +20,9 @@ export function computeOrderNeed(meals, nonSubscriptionDays, scheduleConfig, tod
   const eatingDaysUntilDelivery = countEatingDays(today, nextDeliveryDate, nonSubscriptionDays)
   const eatingDaysNextCycle = countEatingDays(nextDeliveryDate, followingDeliveryDate, nonSubscriptionDays)
 
-  const stockAvailable = meals.filter((m) => !m.eaten && m.expiry_date >= today).length
+  // A frozen meal is preserved past its original expiry_date, so it still counts as
+  // available stock even once that date has passed.
+  const stockAvailable = meals.filter((m) => !m.eaten && (m.frozen_at || m.expiry_date >= today)).length
 
   const shortfallBeforeDelivery = Math.max(0, eatingDaysUntilDelivery - stockAvailable)
   const leftoverAtDelivery = Math.max(0, stockAvailable - eatingDaysUntilDelivery)
@@ -46,7 +48,7 @@ export function computeOrderNeed(meals, nonSubscriptionDays, scheduleConfig, tod
 // capacity, not one.
 export function computeFreezerCandidates(meals, subscriptionSlotDates, today = todayStr()) {
   const stock = [...meals]
-    .filter((m) => !m.eaten && m.expiry_date >= today)
+    .filter((m) => !m.eaten && !m.frozen_at && m.expiry_date >= today)
     .sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.id - b.id)
 
   const availableSlots = subscriptionSlotDates.filter((d) => d >= today).sort()
@@ -66,7 +68,7 @@ export function computeFreezerCandidates(meals, subscriptionSlotDates, today = t
 
 export function computeExpiryWarnings(meals, today = todayStr(), warningDays = 3) {
   return meals
-    .filter((m) => !m.eaten)
+    .filter((m) => !m.eaten && !m.frozen_at)
     .map((m) => ({
       ...m,
       daysUntilExpiry: daysBetween(toDateOnly(today), toDateOnly(m.expiry_date)),

@@ -29,3 +29,25 @@ export function nextDeliveryInfo(scheduleConfig, today = todayStr()) {
 
   return { nextDeliveryDate, orderByDate, daysUntilOrderBy, daysUntilDelivery, status }
 }
+
+// A subscription cycle's *usable* window runs from the day after a delivery (nothing can
+// be eaten the day it arrives, per computeFreezerCandidates' same rule) through the next
+// delivery date inclusive — always exactly 7 days since delivery is a fixed weekday.
+// offset 0 is the cycle containing `today`; negative/positive offsets step whole cycles.
+export function cycleBounds(scheduleConfig, today = todayStr(), offset = 0) {
+  const { delivery_weekday, order_by_weekday } = scheduleConfig
+
+  const todayWeekday = weekdayOf(today)
+  const daysSinceDelivery = (todayWeekday - delivery_weekday + 7) % 7
+  const currentDeliveryDate = addDays(today, -daysSinceDelivery)
+
+  const deliveryDate = addDays(currentDeliveryDate, 7 * offset)
+  const nextDeliveryDate = addDays(deliveryDate, 7)
+  const cycleStart = addDays(deliveryDate, 1)
+  const cycleEnd = nextDeliveryDate
+
+  const offsetDays = (delivery_weekday - order_by_weekday + 7) % 7
+  const orderByDate = addDays(nextDeliveryDate, -offsetDays)
+
+  return { cycleStart, cycleEnd, deliveryDate, nextDeliveryDate, orderByDate }
+}

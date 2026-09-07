@@ -12,6 +12,7 @@ mealsRouter.get('/', (req, res) => {
   if (req.query.unassigned === '1') {
     sql += ` AND eaten = 0 AND id NOT IN (SELECT meal_id FROM meal_slots WHERE meal_id IS NOT NULL)`
   }
+  if (req.query.frozen === '1') sql += ' AND frozen_at IS NOT NULL'
   sql += ' ORDER BY expiry_date ASC'
   res.json(db.prepare(sql).all(...params))
 })
@@ -64,6 +65,28 @@ mealsRouter.post('/:id/eat', (req, res) => {
   db.prepare(`
     UPDATE meals SET eaten = 1, eaten_date = ?, updated_at = datetime('now') WHERE id = ?
   `).run(req.body?.eaten_date ?? todayStr(), req.params.id)
+  res.json(db.prepare('SELECT * FROM meals WHERE id = ?').get(req.params.id))
+})
+
+mealsRouter.post('/:id/freeze', (req, res) => {
+  const current = db.prepare('SELECT * FROM meals WHERE id = ?').get(req.params.id)
+  if (!current) return res.status(404).json({ error: 'Not found' })
+  const { freeze_type } = req.body
+  if (!['light', 'deep'].includes(freeze_type)) {
+    return res.status(400).json({ error: 'freeze_type must be light or deep' })
+  }
+  db.prepare(`
+    UPDATE meals SET frozen_at = ?, freeze_type = ?, updated_at = datetime('now') WHERE id = ?
+  `).run(todayStr(), freeze_type, req.params.id)
+  res.json(db.prepare('SELECT * FROM meals WHERE id = ?').get(req.params.id))
+})
+
+mealsRouter.post('/:id/unfreeze', (req, res) => {
+  const current = db.prepare('SELECT * FROM meals WHERE id = ?').get(req.params.id)
+  if (!current) return res.status(404).json({ error: 'Not found' })
+  db.prepare(`
+    UPDATE meals SET frozen_at = NULL, freeze_type = NULL, updated_at = datetime('now') WHERE id = ?
+  `).run(req.params.id)
   res.json(db.prepare('SELECT * FROM meals WHERE id = ?').get(req.params.id))
 })
 

@@ -1,7 +1,7 @@
 import express from 'express'
 import db from '../db.js'
 import { todayStr } from '../lib/dates.js'
-import { nextDeliveryInfo } from '../lib/schedule.js'
+import { nextDeliveryInfo, cycleBounds } from '../lib/schedule.js'
 import { computeOrderNeed, computeExpiryWarnings, computeFreezerCandidates } from '../lib/stock.js'
 
 export const dashboardRouter = express.Router()
@@ -23,7 +23,15 @@ dashboardRouter.get('/', (req, res) => {
   const subscriptionSlotDates = db.prepare(`
     SELECT date FROM meal_slots WHERE status = 'subscription' AND date >= ?
   `).all(today).map((r) => r.date)
-  const freezerCandidates = computeFreezerCandidates(meals, subscriptionSlotDates, today)
+  const rawFreezerCandidates = computeFreezerCandidates(meals, subscriptionSlotDates, today)
+
+  const { cycleEnd } = cycleBounds(scheduleConfig, today, 0)
+  const findAssignedDate = db.prepare('SELECT date FROM meal_slots WHERE meal_id = ?')
+  const freezerCandidates = rawFreezerCandidates.map((m) => {
+    const assignedSlot = findAssignedDate.get(m.id)
+    const suggestedFreezeType = assignedSlot && assignedSlot.date <= cycleEnd ? 'light' : 'deep'
+    return { ...m, assignedSlotDate: assignedSlot?.date ?? null, suggestedFreezeType }
+  })
 
   res.json({ today, delivery, orderNeed, expiryWarnings, pendingReceipts, freezerCandidates })
 })

@@ -27,6 +27,8 @@ export const meals = {
   ...makeEntity('meals'),
   batchCreate: (data) => request('POST', '/meals/batch', data),
   markEaten: (id) => request('POST', `/meals/${id}/eat`),
+  freeze: (id, freeze_type) => request('POST', `/meals/${id}/freeze`, { freeze_type }),
+  unfreeze: (id) => request('POST', `/meals/${id}/unfreeze`),
 }
 
 export const orderPlans = {
@@ -58,4 +60,5 @@ export const calendar = {
 export const schedule = {
   get: () => request('GET', '/schedule'),
   update: (data) => request('PATCH', '/schedule', data),
+  getCycle: (offset = 0) => request('GET', `/schedule/cycle?offset=${offset}`),
 }

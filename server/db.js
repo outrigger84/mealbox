@@ -40,6 +40,8 @@ db.exec(`
     assigned_date TEXT,
     eaten INTEGER NOT NULL DEFAULT 0,
     eaten_date TEXT,
+    frozen_at TEXT,
+    freeze_type TEXT CHECK (freeze_type IN ('light','deep')),
     notes TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -86,6 +88,14 @@ function migrate() {
   const mealSlotColumns = db.prepare("PRAGMA table_info(meal_slots)").all().map((c) => c.name)
   if (!mealSlotColumns.includes('meal_id')) {
     db.exec('ALTER TABLE meal_slots ADD COLUMN meal_id INTEGER REFERENCES meals(id) ON DELETE SET NULL')
+  }
+
+  const mealColumns = db.prepare("PRAGMA table_info(meals)").all().map((c) => c.name)
+  if (!mealColumns.includes('frozen_at')) {
+    db.exec('ALTER TABLE meals ADD COLUMN frozen_at TEXT')
+  }
+  if (!mealColumns.includes('freeze_type')) {
+    db.exec("ALTER TABLE meals ADD COLUMN freeze_type TEXT CHECK (freeze_type IN ('light','deep'))")
   }
 }
 

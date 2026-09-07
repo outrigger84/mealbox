@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { dashboard } from '@/api/client'
+import { dashboard, meals as mealsApi } from '@/api/client'
 import { formatDisplay } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { AlertTriangle, Clock, PackageCheck, Truck, Snowflake } from 'lucide-react'
@@ -24,7 +25,16 @@ const EXPIRY_STYLE = {
 }
 
 export default function Home() {
+  const queryClient = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: dashboard.get })
+
+  const freezeMutation = useMutation({
+    mutationFn: ({ id, freeze_type }) => mealsApi.freeze(id, freeze_type),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['meals'] })
+    },
+  })
 
   if (isLoading) return <p className="text-muted-foreground">Loading…</p>
   if (!data) return null
@@ -75,12 +85,14 @@ export default function Home() {
           <p className="mt-1 text-sm text-sky-800">
             Based on your Calendar plan, these won't be eaten before they expire:
           </p>
-          <ul className="mt-2 space-y-1 text-sm text-sky-900">
+          <ul className="mt-2 space-y-2">
             {freezerCandidates.map((m) => (
-              <li key={m.id} className="flex items-center justify-between rounded-md bg-white/60 px-3 py-1.5">
-                <span>{m.name}</span>
-                <span className="text-xs font-medium">expires {formatDisplay(m.expiry_date)}</span>
-              </li>
+              <FreezeRow
+                key={m.id}
+                meal={m}
+                onFreeze={(freeze_type) => freezeMutation.mutate({ id: m.id, freeze_type })}
+                isPending={freezeMutation.isPending}
+              />
             ))}
           </ul>
         </div>
@@ -110,5 +122,41 @@ export default function Home() {
         )}
       </div>
     </div>
+  )
+}
+
+function FreezeRow({ meal, onFreeze, isPending }) {
+  const [freezeType, setFreezeType] = useState(meal.suggestedFreezeType ?? 'deep')
+
+  return (
+    <li className="rounded-md bg-white/60 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span className="min-w-0 truncate">{meal.name}</span>
+        <span className="text-xs font-medium shrink-0">expires {formatDisplay(meal.expiry_date)}</span>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex gap-1 rounded-md bg-sky-100 p-0.5">
+          {['light', 'deep'].map((type) => (
+            <button
+              key={type}
+              onClick={() => setFreezeType(type)}
+              className={cn(
+                'px-2 py-1 text-xs font-medium rounded capitalize',
+                freezeType === type ? 'bg-white shadow-sm text-sky-900' : 'text-sky-700'
+              )}
+            >
+              {type} freeze
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => onFreeze(freezeType)}
+          disabled={isPending}
+          className="ml-auto rounded-md bg-sky-700 text-white px-3 py-1 text-xs font-medium disabled:opacity-60"
+        >
+          Freeze
+        </button>
+      </div>
+    </li>
   )
 }
