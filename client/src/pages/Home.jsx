@@ -73,7 +73,7 @@ export default function Home() {
         </p>
         <p className="mt-2 text-sm">
           You have <strong>{orderNeed.stockAvailable}</strong> meal{orderNeed.stockAvailable === 1 ? '' : 's'} in stock,
-          need <strong>{orderNeed.eatingDaysUntilDelivery}</strong> before delivery.{' '}
+          need <strong>{orderNeed.mealsNeededUntilDelivery}</strong> before delivery.{' '}
           {pendingOrder ? null : orderNeed.needToOrder ? (
             <>Suggest ordering around <strong>{orderNeed.suggestedOrderQty}</strong> for next cycle.</>
           ) : (

@@ -1,42 +1,46 @@
 import { addDays, daysBetween, toDateOnly, todayStr } from './dates.js'
 import { nextDeliveryInfo } from './schedule.js'
 
-// Number of calendar days in [startDate, endDate) that aren't fully "away" — a day only drops
-// out if every enabled meal type has an explicit not_subscription slot on it (mirrors "Mark
-// away", which cycles every enabled slot to not_subscription; a day with just one meal type
-// marked away, e.g. eating dinner out but still home for lunch, still needs a subscription
-// meal that day). mealSlotsByDate maps date -> { meal_type: status }, sparse — a day/meal_type
-// with no entry defaults to 'subscription', same convention as everywhere else this is read.
-function countEatingDays(startDate, endDate, mealSlotsByDate, enabledMealTypes) {
+// Number of (date, enabled meal_type) slots in [startDate, endDate) that still need a meal —
+// one unit per enabled meal type per day, minus any explicitly not_subscription (a freezer
+// slot still counts: it needs a meal too, just sourced from stock rather than a fresh order —
+// same demand definition as the Calendar projection panel, GET /dashboard/projection). This
+// replaced an earlier one-unit-per-day count that silently assumed a single subscription meal
+// a day regardless of how many meal types were enabled — inconsistent with every other demand
+// calculation in this app once more than one meal type is on subscription. mealSlotsByDate
+// maps date -> { meal_type: status }, sparse — a day/meal_type with no entry defaults to
+// 'subscription', same convention as everywhere else this is read.
+function countDemand(startDate, endDate, mealSlotsByDate, enabledMealTypes) {
   const totalDays = daysBetween(toDateOnly(startDate), toDateOnly(endDate))
-  let eating = 0
+  let demand = 0
   for (let i = 0; i < totalDays; i++) {
     const day = addDays(startDate, i)
     const daySlots = mealSlotsByDate[day] ?? {}
-    const fullyAway = enabledMealTypes.length > 0 && enabledMealTypes.every((mt) => daySlots[mt] === 'not_subscription')
-    if (!fullyAway) eating++
+    for (const mealType of enabledMealTypes) {
+      if (daySlots[mealType] !== 'not_subscription') demand++
+    }
   }
-  return eating
+  return demand
 }
 
 export function computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, scheduleConfig, today = todayStr()) {
   const { nextDeliveryDate } = nextDeliveryInfo(scheduleConfig, today)
   const followingDeliveryDate = addDays(nextDeliveryDate, 7)
 
-  const eatingDaysUntilDelivery = countEatingDays(today, nextDeliveryDate, mealSlotsByDate, enabledMealTypes)
-  const eatingDaysNextCycle = countEatingDays(nextDeliveryDate, followingDeliveryDate, mealSlotsByDate, enabledMealTypes)
+  const mealsNeededUntilDelivery = countDemand(today, nextDeliveryDate, mealSlotsByDate, enabledMealTypes)
+  const mealsNeededNextCycle = countDemand(nextDeliveryDate, followingDeliveryDate, mealSlotsByDate, enabledMealTypes)
 
   // A frozen meal is preserved past its original expiry_date, so it still counts as
   // available stock even once that date has passed.
   const stockAvailable = meals.filter((m) => !m.eaten && (m.frozen_at || m.expiry_date >= today)).length
 
-  const shortfallBeforeDelivery = Math.max(0, eatingDaysUntilDelivery - stockAvailable)
-  const leftoverAtDelivery = Math.max(0, stockAvailable - eatingDaysUntilDelivery)
-  const suggestedOrderQty = Math.max(0, eatingDaysNextCycle - leftoverAtDelivery)
+  const shortfallBeforeDelivery = Math.max(0, mealsNeededUntilDelivery - stockAvailable)
+  const leftoverAtDelivery = Math.max(0, stockAvailable - mealsNeededUntilDelivery)
+  const suggestedOrderQty = Math.max(0, mealsNeededNextCycle - leftoverAtDelivery)
 
   return {
-    eatingDaysUntilDelivery,
-    eatingDaysNextCycle,
+    mealsNeededUntilDelivery,
+    mealsNeededNextCycle,
     stockAvailable,
     shortfallBeforeDelivery,
     leftoverAtDelivery,
