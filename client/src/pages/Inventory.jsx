@@ -9,6 +9,7 @@ import {
   Package, Clock, CalendarCheck, ChevronUp, ChevronDown,
   Coffee, Sandwich, UtensilsCrossed,
 } from 'lucide-react'
+import CopyMealButton from '@/components/CopyMealButton'
 
 const FILTERS = [
   { key: 'all', label: 'All', query: 'eaten=0' },
@@ -210,13 +211,16 @@ export default function Inventory() {
                 <p className="font-medium truncate">{m.name}</p>
                 <p className="text-xs text-muted-foreground">Eaten {formatDisplay(m.eaten_date)}</p>
               </div>
-              <button
-                onClick={() => uneatMutation.mutate(m.id)}
-                className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium shrink-0"
-              >
-                <Undo2 className="w-3.5 h-3.5" />
-                Undo
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <CopyMealButton name={m.name} />
+                <button
+                  onClick={() => uneatMutation.mutate(m.id)}
+                  className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                  Undo
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -237,6 +241,7 @@ export default function Inventory() {
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <CopyMealButton name={m.name} />
                 <button
                   onClick={() => eatMutation.mutate(m.id)}
                   className="flex items-center gap-1.5 rounded-md bg-accent text-accent-foreground px-2.5 py-1.5 text-xs font-medium"
@@ -287,6 +292,7 @@ function FreezerGroup({ label, hint, meals, onEat, onUnfreeze }) {
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <CopyMealButton name={m.name} />
                 <button
                   onClick={() => onEat(m.id)}
                   className="flex items-center gap-1.5 rounded-md bg-accent text-accent-foreground px-2.5 py-1.5 text-xs font-medium"

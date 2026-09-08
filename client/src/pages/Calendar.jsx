@@ -4,6 +4,7 @@ import { dashboard as dashboardApi, mealSlots as mealSlotsApi, meals as mealsApi
 import { addDays, formatDisplay, todayStr } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { UtensilsCrossed, X, Snowflake, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, AlertTriangle, Plane, Truck, TrendingUp, TrendingDown, CalendarDays } from 'lucide-react'
+import CopyMealButton from '@/components/CopyMealButton'
 
 const ALL_MEAL_TYPES = [
   { key: 'breakfast', label: 'Breakfast', enabledField: 'breakfast_enabled' },
@@ -449,22 +450,25 @@ export default function Calendar() {
                 {(status === null || status === 'subscription' || status === 'freezer') && (
                   <div className="flex-1 min-w-0">
                     {slot?.meal_id ? (
-                      <button
-                        onClick={() => setOpenSlotKey(isOpen ? null : slotKey)}
-                        className={cn(
-                          'flex items-center justify-between w-full gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium',
-                          slot.meal_freeze_type ? 'bg-sky-100 text-sky-800' : 'bg-accent text-accent-foreground'
-                        )}
-                      >
-                        <span className="flex items-center gap-1 min-w-0 truncate">
-                          {slot.meal_freeze_type && <Snowflake className="w-3 h-3 shrink-0" />}
-                          {slot.meal_name}
-                        </span>
-                        <X
-                          className="w-3.5 h-3.5 shrink-0"
-                          onClick={(e) => { e.stopPropagation(); assignMutation.mutate({ date, meal_type: key, meal_id: null }) }}
-                        />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setOpenSlotKey(isOpen ? null : slotKey)}
+                          className={cn(
+                            'flex items-center justify-between flex-1 min-w-0 gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium',
+                            slot.meal_freeze_type ? 'bg-sky-100 text-sky-800' : 'bg-accent text-accent-foreground'
+                          )}
+                        >
+                          <span className="flex items-center gap-1 min-w-0 truncate">
+                            {slot.meal_freeze_type && <Snowflake className="w-3 h-3 shrink-0" />}
+                            {slot.meal_name}
+                          </span>
+                          <X
+                            className="w-3.5 h-3.5 shrink-0"
+                            onClick={(e) => { e.stopPropagation(); assignMutation.mutate({ date, meal_type: key, meal_id: null }) }}
+                          />
+                        </button>
+                        <CopyMealButton name={slot.meal_name} className="w-7 h-7" />
+                      </div>
                     ) : (
                       <button
                         onClick={() => setOpenSlotKey(isOpen ? null : slotKey)}
