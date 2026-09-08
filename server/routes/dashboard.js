@@ -27,7 +27,12 @@ dashboardRouter.get('/', (req, res) => {
   }
 
   const orderNeed = computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, scheduleConfig, today)
-  const expiryWarnings = computeExpiryWarnings(meals, today)
+
+  const assignedDateByMealId = new Map(
+    db.prepare('SELECT meal_id, date FROM meal_slots WHERE meal_id IS NOT NULL').all()
+      .map((r) => [r.meal_id, r.date])
+  )
+  const expiryWarnings = computeExpiryWarnings(meals, assignedDateByMealId, today)
 
   const pendingReceipts = db.prepare(`
     SELECT * FROM order_plans WHERE received_at IS NULL AND delivery_date <= ? ORDER BY delivery_date ASC

@@ -84,7 +84,12 @@ export function computeFreezerCandidates(meals, subscriptionSlots, today = today
   return freezerCandidates
 }
 
-export function computeExpiryWarnings(meals, today = todayStr(), warningDays = 3) {
+// assignedDateByMealId maps meal_id -> its meal_slots date, for meals linked to a real
+// Calendar slot. A meal assigned to eat on or before its own expiry is already safely planned
+// to be eaten in time — flagging it here too would just be noise on top of the Calendar's own
+// plan, so it's excluded rather than warned about (mirrors the "usable window" check
+// computeFreezerCandidates already does for the same assigned-meal-vs-expiry comparison).
+export function computeExpiryWarnings(meals, assignedDateByMealId, today = todayStr(), warningDays = 3) {
   return meals
     .filter((m) => !m.eaten && !m.frozen_at)
     .map((m) => ({
@@ -92,10 +97,13 @@ export function computeExpiryWarnings(meals, today = todayStr(), warningDays = 3
       daysUntilExpiry: daysBetween(toDateOnly(today), toDateOnly(m.expiry_date)),
     }))
     .filter((m) => m.daysUntilExpiry <= warningDays)
+    .filter((m) => {
+      const assignedDate = assignedDateByMealId.get(m.id)
+      return !(assignedDate !== undefined && assignedDate <= m.expiry_date)
+    })
     .map((m) => ({
       ...m,
       status: m.daysUntilExpiry < 0 ? 'expired' : m.daysUntilExpiry === 0 ? 'expires_today' : 'expiring_soon',
-      unplanned: !m.assigned_date,
     }))
     .sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry)
 }
