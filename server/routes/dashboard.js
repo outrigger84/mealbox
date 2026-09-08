@@ -109,16 +109,24 @@ dashboardRouter.get('/', (req, res) => {
 // just sourced from the freezer rather than a fresh order — which meal fills which slot can
 // be decided later, so the split doesn't matter for this count). Supply = mealsDelivered
 // (assumed as Settings' default_order_qty for every period, since a future period hasn't
-// been ordered yet) + freezerStockAtStart (real current deep-frozen stock for period 0, then
-// chained from the previous period's surplus). A deficit period clamps to 0 rather than
-// carrying a negative balance into the freezer — you can't have negative physical stock.
+// been ordered yet) + carried-over reserve, chained from the previous period's surplus. A
+// deficit period clamps to 0 rather than carrying a negative balance into the freezer — you
+// can't have negative physical stock.
+//
+// The current cycle's real deep-frozen count is reported as period 0's freezerStockAtStart
+// (so it matches Inventory), but it does NOT feed period 0's own supply/surplus math — that
+// reserve wasn't drawn on to meet this cycle's demand (this cycle's demand is already spoken
+// for by meal_slots assignments to stock delivered before this cycle even started; the
+// projection has no visibility into that older stock at all), so folding it into supply here
+// would double-count it against demand it was never meeting. The chain instead starts at 0 and
+// accumulates purely from each period's own mealsDelivered vs demand from this point forward.
 dashboardRouter.get('/projection', (req, res) => {
   const periods = Math.max(1, Math.min(12, parseInt(req.query.periods, 10) || 4))
   const today = todayStr()
   const scheduleConfig = db.prepare('SELECT * FROM schedule_config WHERE id = 1').get()
   const enabledMealTypes = ['breakfast', 'lunch', 'dinner'].filter((t) => scheduleConfig[`${t}_enabled`])
 
-  let freezerStockAtStart = db.prepare(`
+  const actualFreezerStock = db.prepare(`
     SELECT COUNT(*) AS count FROM meals WHERE eaten = 0 AND frozen_at IS NOT NULL AND freeze_type = 'deep'
   `).get().count
 
@@ -130,6 +138,7 @@ dashboardRouter.get('/projection', (req, res) => {
     : null
 
   const results = []
+  let carriedStock = 0
   for (let offset = 0; offset < periods; offset++) {
     const cycle = cycleBounds(scheduleConfig, today, offset)
     const notSubscriptionCount = periodStmt
@@ -137,7 +146,7 @@ dashboardRouter.get('/projection', (req, res) => {
       : 0
     const demand = 7 * enabledMealTypes.length - notSubscriptionCount
     const mealsDelivered = scheduleConfig.default_order_qty
-    const supply = mealsDelivered + freezerStockAtStart
+    const supply = mealsDelivered + carriedStock
     const surplus = supply - demand
     results.push({
       offset,
@@ -145,11 +154,11 @@ dashboardRouter.get('/projection', (req, res) => {
       cycleEnd: cycle.cycleEnd,
       demand,
       mealsDelivered,
-      freezerStockAtStart,
+      freezerStockAtStart: offset === 0 ? actualFreezerStock : carriedStock,
       supply,
       surplus,
     })
-    freezerStockAtStart = Math.max(0, surplus)
+    carriedStock = Math.max(0, surplus)
   }
 
   res.json({ today, periods: results })
