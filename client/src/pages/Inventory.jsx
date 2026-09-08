@@ -231,6 +231,9 @@ export default function Inventory() {
                   {m.assigned_slot_date && (
                     <> · {MEAL_TYPE_LABELS[m.assigned_slot_meal_type]} {formatDisplay(m.assigned_slot_date)}</>
                   )}
+                  {m.frozen_at && (
+                    <> · <Snowflake className="inline w-3 h-3 text-sky-600 align-text-bottom" /> {m.freeze_type === 'deep' ? 'Deep' : 'Light'} freeze</>
+                  )}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -274,7 +277,14 @@ function FreezerGroup({ label, hint, meals, onEat, onUnfreeze }) {
             <li key={m.id} className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3">
               <div className="min-w-0">
                 <p className="font-medium truncate">{m.name}</p>
-                <p className="text-xs text-muted-foreground">Frozen {formatDisplay(m.frozen_at)}</p>
+                <p className="text-xs text-muted-foreground">
+                  Frozen {formatDisplay(m.frozen_at)}
+                  {m.assigned_slot_date ? (
+                    <> · {MEAL_TYPE_LABELS[m.assigned_slot_meal_type]} {formatDisplay(m.assigned_slot_date)}</>
+                  ) : (
+                    <> · Unassigned</>
+                  )}
+                </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
