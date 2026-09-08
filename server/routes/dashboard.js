@@ -113,24 +113,23 @@ dashboardRouter.get('/', (req, res) => {
 // deficit period clamps to 0 rather than carrying a negative balance into the freezer — you
 // can't have negative physical stock.
 //
-// The current cycle's real deep-frozen count is reported as period 0's freezerStockAtStart
-// (so it matches Inventory), but only the portion of it that predates the current cycle
-// (frozen_at < cycle 0's cycleStart) feeds period 0's own supply/surplus math. A meal frozen
-// *during* the current cycle is presumed to already be explained by this cycle's own
-// mealsDelivered-vs-demand accounting (this cycle's demand is already spoken for by meal_slots
-// assignments to stock delivered before the cycle started, which this endpoint otherwise has
-// no visibility into) — folding it in on top would double-count it against demand it was never
-// meeting. A meal frozen before the cycle even began can't be explained that way, so it's
-// added as genuine additional reserve. The chain then accumulates forward normally from there.
+// freezerStockAtStart is a decision-support number, not a live inventory snapshot (Inventory's
+// Freezer tab is that) — it's "how much reserve existed before this period's own actions," feeding
+// the supply/surplus math it's shown next to. Only deep-frozen stock that predates the current
+// cycle (frozen_at < cycle 0's cycleStart) counts: a meal frozen *during* the current cycle is
+// presumed to already be explained by this cycle's own mealsDelivered-vs-demand accounting (this
+// cycle's demand is already spoken for by meal_slots assignments to stock delivered before the
+// cycle started, which this endpoint otherwise has no visibility into) — folding it in on top
+// would double-count it against demand it was never meeting, and reporting it as "starting"
+// reserve would overstate what was actually there before this period began (period 0 in
+// particular has no prior period's data to have carried it forward from). A meal frozen before
+// the cycle even began can't be explained that way, so it's added as genuine additional reserve,
+// then the chain accumulates forward normally from there.
 dashboardRouter.get('/projection', (req, res) => {
   const periods = Math.max(1, Math.min(12, parseInt(req.query.periods, 10) || 4))
   const today = todayStr()
   const scheduleConfig = db.prepare('SELECT * FROM schedule_config WHERE id = 1').get()
   const enabledMealTypes = ['breakfast', 'lunch', 'dinner'].filter((t) => scheduleConfig[`${t}_enabled`])
-
-  const actualFreezerStock = db.prepare(`
-    SELECT COUNT(*) AS count FROM meals WHERE eaten = 0 AND frozen_at IS NOT NULL AND freeze_type = 'deep'
-  `).get().count
 
   const currentCycleStart = cycleBounds(scheduleConfig, today, 0).cycleStart
   const priorFreezerStock = db.prepare(`
@@ -162,7 +161,7 @@ dashboardRouter.get('/projection', (req, res) => {
       cycleEnd: cycle.cycleEnd,
       demand,
       mealsDelivered,
-      freezerStockAtStart: offset === 0 ? actualFreezerStock : carriedStock,
+      freezerStockAtStart: carriedStock,
       supply,
       surplus,
     })
