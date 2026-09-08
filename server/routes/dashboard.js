@@ -114,12 +114,14 @@ dashboardRouter.get('/', (req, res) => {
 // can't have negative physical stock.
 //
 // The current cycle's real deep-frozen count is reported as period 0's freezerStockAtStart
-// (so it matches Inventory), but it does NOT feed period 0's own supply/surplus math — that
-// reserve wasn't drawn on to meet this cycle's demand (this cycle's demand is already spoken
-// for by meal_slots assignments to stock delivered before this cycle even started; the
-// projection has no visibility into that older stock at all), so folding it into supply here
-// would double-count it against demand it was never meeting. The chain instead starts at 0 and
-// accumulates purely from each period's own mealsDelivered vs demand from this point forward.
+// (so it matches Inventory), but only the portion of it that predates the current cycle
+// (frozen_at < cycle 0's cycleStart) feeds period 0's own supply/surplus math. A meal frozen
+// *during* the current cycle is presumed to already be explained by this cycle's own
+// mealsDelivered-vs-demand accounting (this cycle's demand is already spoken for by meal_slots
+// assignments to stock delivered before the cycle started, which this endpoint otherwise has
+// no visibility into) — folding it in on top would double-count it against demand it was never
+// meeting. A meal frozen before the cycle even began can't be explained that way, so it's
+// added as genuine additional reserve. The chain then accumulates forward normally from there.
 dashboardRouter.get('/projection', (req, res) => {
   const periods = Math.max(1, Math.min(12, parseInt(req.query.periods, 10) || 4))
   const today = todayStr()
@@ -130,6 +132,12 @@ dashboardRouter.get('/projection', (req, res) => {
     SELECT COUNT(*) AS count FROM meals WHERE eaten = 0 AND frozen_at IS NOT NULL AND freeze_type = 'deep'
   `).get().count
 
+  const currentCycleStart = cycleBounds(scheduleConfig, today, 0).cycleStart
+  const priorFreezerStock = db.prepare(`
+    SELECT COUNT(*) AS count FROM meals
+    WHERE eaten = 0 AND frozen_at IS NOT NULL AND freeze_type = 'deep' AND frozen_at < ?
+  `).get(currentCycleStart).count
+
   const periodStmt = enabledMealTypes.length
     ? db.prepare(`
         SELECT status FROM meal_slots
@@ -138,7 +146,7 @@ dashboardRouter.get('/projection', (req, res) => {
     : null
 
   const results = []
-  let carriedStock = 0
+  let carriedStock = priorFreezerStock
   for (let offset = 0; offset < periods; offset++) {
     const cycle = cycleBounds(scheduleConfig, today, offset)
     const notSubscriptionCount = periodStmt
