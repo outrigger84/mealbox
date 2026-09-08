@@ -80,10 +80,6 @@ export default function Calendar() {
     queryFn: () => nonSubscriptionDaysApi.listRange(cycle.cycleStart, addDays(cycle.cycleEnd, 1)),
     enabled: !!cycle,
   })
-  const { data: frozenMeals, isLoading: frozenMealsLoading } = useQuery({
-    queryKey: ['meals', 'frozen', 'uneaten'],
-    queryFn: () => mealsApi.list('frozen=1&eaten=0'),
-  })
   // Real-world context from Wallplan (a sibling app) for the viewed cycle — read-only, purely
   // to help judge whether the meal plan matches what's actually happening that week. Never
   // blocks the page: a down/slow Wallplan comes back as `unavailable`, not a query error.
@@ -159,7 +155,7 @@ export default function Calendar() {
     onSuccess: () => { invalidateAll(); setRangeStart(''); setRangeEnd(''); setRangeFormOpen(false) },
   })
 
-  if (cycleLoading || previousCycleLoading || slotsLoading || scheduleLoading || frozenMealsLoading || (cycleOffset >= 0 && projectionLoading) || !cycle || !previousCycle || !scheduleConfig) {
+  if (cycleLoading || previousCycleLoading || slotsLoading || scheduleLoading || (cycleOffset >= 0 && projectionLoading) || !cycle || !previousCycle || !scheduleConfig) {
     return <p className="text-muted-foreground">Loading…</p>
   }
 
@@ -187,8 +183,10 @@ export default function Calendar() {
   // several periods ahead and a future period's freezer supply depends on every period
   // between now and then, not just today's actual stock (a deficit period clamps its
   // carry-forward to 0 — no negative physical stock). A past cycle can't run that projection
-  // backward, so it falls back to a simpler same-cycle-only estimate using current actual
-  // freezer stock, which won't reflect what the freezer really held back then.
+  // backward, and the app has no historical record of what the freezer actually held back then
+  // (meals.frozen_at is a single column, overwritten on freeze/unfreeze, not a ledger) — so
+  // freezerStock (and surplus, which depends on it) is genuinely unknown for a past cycle,
+  // shown as such rather than substituting today's current freezer count.
   const today = todayStr()
   const enabledTypeKeys = new Set(MEAL_TYPES.map((mt) => mt.key))
   const enabledSlots = (slots ?? []).filter((s) => enabledTypeKeys.has(s.meal_type))
@@ -203,15 +201,17 @@ export default function Calendar() {
     const notSubscriptionCount = enabledSlots.filter((s) => s.status === 'not_subscription').length
     demand = days.length * MEAL_TYPES.length - notSubscriptionCount
     mealsDelivered = scheduleConfig.default_order_qty
-    freezerStock = (frozenMeals ?? []).filter((m) => m.freeze_type === 'deep').length
-    surplus = mealsDelivered + freezerStock - demand
+    freezerStock = null
+    surplus = null
   }
   // A freezer slot with no meal picked yet is still just an intention — it's only really
   // backed by stock if there's enough projected freezer supply left to cover it. A slot that
   // already has a specific deep-frozen meal assigned is unaffected by this: that physical meal
-  // either already exists or will once frozen, independent of the aggregate projection.
+  // either already exists or will once frozen, independent of the aggregate projection. Unknown
+  // (past-cycle) freezer stock can't tell you there's a shortfall, so it reads as none rather
+  // than guessing.
   const unassignedFreezerSlotCount = enabledSlots.filter((s) => s.status === 'freezer' && !s.meal_id).length
-  const freezerShortfall = Math.max(0, unassignedFreezerSlotCount - freezerStock)
+  const freezerShortfall = freezerStock === null ? 0 : Math.max(0, unassignedFreezerSlotCount - freezerStock)
 
   function handleCycle(date, meal_type, currentStatus) {
     const nextIndex = (CYCLE.indexOf(currentStatus) + 1) % CYCLE.length
@@ -318,21 +318,25 @@ export default function Calendar() {
               <p className="flex items-center gap-1.5 text-xs font-medium text-sky-900">
                 <Snowflake className="w-3.5 h-3.5" /> Freezer stock
               </p>
-              <p className="mt-1 text-xl font-semibold text-sky-900">{freezerStock}</p>
-              {cycleOffset > 0 && <p className="text-[10px] text-sky-800">projected</p>}
+              <p className="mt-1 text-xl font-semibold text-sky-900">{freezerStock === null ? '—' : freezerStock}</p>
+              {freezerStock === null ? (
+                <p className="text-[10px] text-sky-800">not tracked</p>
+              ) : cycleOffset > 0 && (
+                <p className="text-[10px] text-sky-800">projected</p>
+              )}
             </div>
             <div className={cn(
               'rounded-lg border p-3',
-              surplus >= 0 ? 'bg-accent/40 border-accent' : 'bg-destructive/10 border-destructive/30'
+              surplus === null ? 'bg-card' : surplus >= 0 ? 'bg-accent/40 border-accent' : 'bg-destructive/10 border-destructive/30'
             )}>
               <p className={cn(
                 'flex items-center gap-1.5 text-xs font-medium',
-                surplus >= 0 ? 'text-accent-foreground' : 'text-destructive'
+                surplus === null ? 'text-muted-foreground' : surplus >= 0 ? 'text-accent-foreground' : 'text-destructive'
               )}>
-                {surplus >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                {surplus >= 0 ? 'Surplus' : 'Deficit'}
+                {surplus === null ? null : surplus >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                {surplus === null ? 'Surplus' : surplus >= 0 ? 'Surplus' : 'Deficit'}
               </p>
-              <p className="mt-1 text-xl font-semibold">{surplus >= 0 ? `+${surplus}` : surplus}</p>
+              <p className="mt-1 text-xl font-semibold">{surplus === null ? '—' : surplus >= 0 ? `+${surplus}` : surplus}</p>
             </div>
           </div>
         )}
