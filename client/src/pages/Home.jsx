@@ -73,25 +73,33 @@ export default function Home() {
         </p>
         <p className="mt-2 text-sm">
           You have <strong>{orderNeed.stockAvailable}</strong> meal{orderNeed.stockAvailable === 1 ? '' : 's'} in stock,
-          need <strong>{orderNeed.mealsNeededUntilDelivery}</strong> before delivery.{' '}
-          {pendingOrder ? null : orderNeed.needToOrder ? (
-            <>Suggest ordering around <strong>{orderNeed.suggestedOrderQty}</strong> for next cycle.</>
-          ) : (
-            <>No need to order this cycle.</>
-          )}
+          need <strong>{orderNeed.mealsNeededUntilDelivery}</strong> before delivery.
+          {pendingOrder || orderNeed.needToOrder ? null : <> No need to order this cycle.</>}
         </p>
-        {!pendingOrder && orderNeed.nextCycleBreakdown && (
-          <ul className="mt-2 text-xs text-muted-foreground space-y-0.5">
-            <li>{orderNeed.nextCycleBreakdown.demand} meal{orderNeed.nextCycleBreakdown.demand === 1 ? '' : 's'} needed next cycle</li>
-            {orderNeed.nextCycleBreakdown.coveredByLeftoverStock > 0 && (
-              <li>− {orderNeed.nextCycleBreakdown.coveredByLeftoverStock} covered by stock left over from this cycle</li>
-            )}
-            {orderNeed.nextCycleBreakdown.freezerSlotCount > 0 && (
-              <li>({orderNeed.nextCycleBreakdown.freezerSlotCount} freezer slot{orderNeed.nextCycleBreakdown.freezerSlotCount === 1 ? '' : 's'} excluded — covered from stock you set aside, not an order)</li>
-            )}
-            <li className="font-medium text-foreground">= {orderNeed.nextCycleBreakdown.needsFreshOrder} to order</li>
-          </ul>
-        )}
+        {!pendingOrder && orderNeed.nextCycleBreakdown && (() => {
+          const b = orderNeed.nextCycleBreakdown
+          const orderParts = []
+          if (b.subscriptionOrderQty > 0) orderParts.push(`${b.subscriptionOrderQty} subscription`)
+          if (b.freezerStockShortfall > 0) {
+            orderParts.push(
+              `${b.freezerStockShortfall} to be frozen (no spare freezer stock to cover ${b.freezerStockShortfall === 1 ? 'that slot' : 'those slots'})`
+            )
+          }
+          return (
+            <div className="mt-2 text-xs text-muted-foreground space-y-1">
+              <p>
+                Next cycle: <strong className="text-foreground">{b.totalSlots}</strong> meal slot{b.totalSlots === 1 ? '' : 's'} — {b.subscriptionSlots} subscription, {b.freezerSlots} freezer, {b.otherSlots} other
+                {b.coveredByLeftoverStock > 0 && <> ({b.coveredByLeftoverStock} of the subscription slots already covered by leftover stock)</>}
+              </p>
+              {orderNeed.needToOrder && (
+                <p>
+                  Suggest ordering around <strong className="text-foreground">{b.needsFreshOrder}</strong> for next cycle
+                  {orderParts.length > 0 && <>: {orderParts.join(' + ')} = {b.needsFreshOrder}</>}
+                </p>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       {freezerCandidates?.length > 0 && (

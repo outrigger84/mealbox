@@ -21,19 +21,29 @@ dashboardRouter.get('/', (req, res) => {
   // (see stock.js), so this range must fetch that day's rows too.
   const followingDeliveryDate = addDays(delivery.nextDeliveryDate, 7)
   const orderNeedSlotRows = db.prepare(`
-    SELECT date, meal_type, status FROM meal_slots WHERE date >= ? AND date <= ?
+    SELECT date, meal_type, status, meal_id FROM meal_slots WHERE date >= ? AND date <= ?
   `).all(today, followingDeliveryDate)
   const mealSlotsByDate = {}
   for (const r of orderNeedSlotRows) {
     (mealSlotsByDate[r.date] ??= {})[r.meal_type] = r.status
   }
 
-  const orderNeed = computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, scheduleConfig, today)
-
   const assignedDateByMealId = new Map(
     db.prepare('SELECT meal_id, date FROM meal_slots WHERE meal_id IS NOT NULL').all()
       .map((r) => [r.meal_id, r.date])
   )
+
+  // How many freezer slots (through followingDeliveryDate) have no meal picked yet, versus how
+  // much deep-frozen stock is sitting around unassigned to cover them — a shortfall here means
+  // there's no reserve to draw on, so an extra meal needs ordering now to freeze for later.
+  const unassignedFreezerSlotCount = orderNeedSlotRows.filter((r) => r.status === 'freezer' && r.meal_id == null).length
+  const availableDeepFrozenStock = meals.filter((m) => !m.eaten && m.freeze_type === 'deep' && !assignedDateByMealId.has(m.id)).length
+
+  const orderNeed = computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, scheduleConfig, today, {
+    unassignedSlotCount: unassignedFreezerSlotCount,
+    availableDeepFrozen: availableDeepFrozenStock,
+  })
+
   const expiryWarnings = computeExpiryWarnings(meals, assignedDateByMealId, today)
 
   const pendingReceipts = db.prepare(`

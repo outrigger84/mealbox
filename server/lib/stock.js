@@ -40,7 +40,7 @@ function countByStatus(startDate, endDate, mealSlotsByDate, enabledMealTypes, st
   return count
 }
 
-export function computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, scheduleConfig, today = todayStr()) {
+export function computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, scheduleConfig, today = todayStr(), freezerSlotInfo = { unassignedSlotCount: 0, availableDeepFrozen: 0 }) {
   const { nextDeliveryDate } = nextDeliveryInfo(scheduleConfig, today)
   const followingDeliveryDate = addDays(nextDeliveryDate, 7)
 
@@ -69,18 +69,31 @@ export function computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, sched
 
   const shortfallBeforeDelivery = Math.max(0, mealsNeededUntilDelivery - stockAvailable)
   const leftoverAtDelivery = Math.max(0, stockAvailable - mealsNeededUntilDelivery)
-  const suggestedOrderQty = Math.max(0, mealsNeededNextCycle - leftoverAtDelivery)
+  const subscriptionOrderQty = Math.max(0, mealsNeededNextCycle - leftoverAtDelivery)
 
-  // Breakdown of how suggestedOrderQty was reached, for display: how much of next cycle's
-  // demand is already spoken for by stock left over from before delivery vs. how much still
-  // needs a fresh order, plus the freezer-slot count that was excluded from demand entirely
-  // (informational only — those are covered by stock set aside for the freezer, not an order).
-  const nextCycleFreezerSlotCount = countByStatus(nextCycleStart, nextCycleEnd, mealSlotsByDate, enabledMealTypes, 'freezer')
+  // Freezer slots are excluded from demand above because they're meant to be filled from stock
+  // already set aside — but if there isn't enough deep-frozen stock on hand (unassigned to any
+  // other freezer slot) to cover every freezer slot still needing a meal, that reserve has to
+  // come from somewhere: an extra meal ordered now and frozen deep for later. So unlike the
+  // exclusion itself, a genuine shortfall here DOES belong in the order suggestion.
+  const freezerStockShortfall = Math.max(0, freezerSlotInfo.unassignedSlotCount - freezerSlotInfo.availableDeepFrozen)
+  const suggestedOrderQty = subscriptionOrderQty + freezerStockShortfall
+
+  // Breakdown of how suggestedOrderQty was reached, for display: the full slot mix for next
+  // cycle (subscription/freezer/other), how much of the subscription portion is already spoken
+  // for by stock left over from before delivery, and how many freezer slots still need an
+  // extra meal ordered (and later frozen) because there's no spare freezer stock to draw on.
+  const nextCycleFreezerSlots = countByStatus(nextCycleStart, nextCycleEnd, mealSlotsByDate, enabledMealTypes, 'freezer')
+  const nextCycleOtherSlots = countByStatus(nextCycleStart, nextCycleEnd, mealSlotsByDate, enabledMealTypes, 'not_subscription')
   const nextCycleBreakdown = {
-    demand: mealsNeededNextCycle,
+    totalSlots: mealsNeededNextCycle + nextCycleFreezerSlots + nextCycleOtherSlots,
+    subscriptionSlots: mealsNeededNextCycle,
+    freezerSlots: nextCycleFreezerSlots,
+    otherSlots: nextCycleOtherSlots,
     coveredByLeftoverStock: Math.min(mealsNeededNextCycle, leftoverAtDelivery),
+    subscriptionOrderQty,
+    freezerStockShortfall,
     needsFreshOrder: suggestedOrderQty,
-    freezerSlotCount: nextCycleFreezerSlotCount,
   }
 
   return {
