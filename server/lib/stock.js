@@ -27,8 +27,15 @@ export function computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, sched
   const { nextDeliveryDate } = nextDeliveryInfo(scheduleConfig, today)
   const followingDeliveryDate = addDays(nextDeliveryDate, 7)
 
-  const mealsNeededUntilDelivery = countDemand(today, nextDeliveryDate, mealSlotsByDate, enabledMealTypes)
-  const mealsNeededNextCycle = countDemand(nextDeliveryDate, followingDeliveryDate, mealSlotsByDate, enabledMealTypes)
+  // Window boundaries follow the same day-after-delivery-through-next-delivery-inclusive
+  // convention as cycleBounds() (schedule.js) / the Calendar projection panel: nothing that
+  // arrives on a delivery day is usable yet, so that day is still consumed from existing stock
+  // and belongs to the outgoing window, not the incoming one. (cycleBounds() itself isn't
+  // called here because its offset is purely calendar-based, while nextDeliveryDate/
+  // followingDeliveryDate can roll forward a week when this week's order-by cutoff has
+  // already passed — the two would disagree on which delivery is "next" in that case.)
+  const mealsNeededUntilDelivery = countDemand(today, addDays(nextDeliveryDate, 1), mealSlotsByDate, enabledMealTypes)
+  const mealsNeededNextCycle = countDemand(addDays(nextDeliveryDate, 1), addDays(followingDeliveryDate, 1), mealSlotsByDate, enabledMealTypes)
 
   // A frozen meal is preserved past its original expiry_date, so it still counts as
   // available stock even once that date has passed.

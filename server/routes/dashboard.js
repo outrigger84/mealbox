@@ -17,9 +17,11 @@ dashboardRouter.get('/', (req, res) => {
   // computeOrderNeed needs to know which days are fully "away" (see stock.js) across both the
   // partial cycle up to the next delivery and the full cycle after it — sourced from the
   // Calendar slot planner, not the old non_subscription_days table nothing writes to anymore.
+  // computeOrderNeed's next-cycle window now runs through followingDeliveryDate inclusive
+  // (see stock.js), so this range must fetch that day's rows too.
   const followingDeliveryDate = addDays(delivery.nextDeliveryDate, 7)
   const orderNeedSlotRows = db.prepare(`
-    SELECT date, meal_type, status FROM meal_slots WHERE date >= ? AND date < ?
+    SELECT date, meal_type, status FROM meal_slots WHERE date >= ? AND date <= ?
   `).all(today, followingDeliveryDate)
   const mealSlotsByDate = {}
   for (const r of orderNeedSlotRows) {
