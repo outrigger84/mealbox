@@ -80,6 +80,18 @@ export default function Home() {
             <>No need to order this cycle.</>
           )}
         </p>
+        {!pendingOrder && orderNeed.nextCycleBreakdown && (
+          <ul className="mt-2 text-xs text-muted-foreground space-y-0.5">
+            <li>{orderNeed.nextCycleBreakdown.demand} meal{orderNeed.nextCycleBreakdown.demand === 1 ? '' : 's'} needed next cycle</li>
+            {orderNeed.nextCycleBreakdown.coveredByLeftoverStock > 0 && (
+              <li>− {orderNeed.nextCycleBreakdown.coveredByLeftoverStock} covered by stock left over from this cycle</li>
+            )}
+            {orderNeed.nextCycleBreakdown.freezerSlotCount > 0 && (
+              <li>({orderNeed.nextCycleBreakdown.freezerSlotCount} freezer slot{orderNeed.nextCycleBreakdown.freezerSlotCount === 1 ? '' : 's'} excluded — covered from stock you set aside, not an order)</li>
+            )}
+            <li className="font-medium text-foreground">= {orderNeed.nextCycleBreakdown.needsFreshOrder} to order</li>
+          </ul>
+        )}
       </div>
 
       {freezerCandidates?.length > 0 && (

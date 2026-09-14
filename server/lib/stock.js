@@ -1,15 +1,17 @@
 import { addDays, daysBetween, toDateOnly, todayStr } from './dates.js'
 import { nextDeliveryInfo } from './schedule.js'
 
-// Number of (date, enabled meal_type) slots in [startDate, endDate) that still need a meal —
-// one unit per enabled meal type per day, minus any explicitly not_subscription (a freezer
-// slot still counts: it needs a meal too, just sourced from stock rather than a fresh order —
-// same demand definition as the Calendar projection panel, GET /dashboard/projection). This
-// replaced an earlier one-unit-per-day count that silently assumed a single subscription meal
-// a day regardless of how many meal types were enabled — inconsistent with every other demand
-// calculation in this app once more than one meal type is on subscription. mealSlotsByDate
-// maps date -> { meal_type: status }, sparse — a day/meal_type with no entry defaults to
-// 'subscription', same convention as everywhere else this is read.
+// Number of (date, enabled meal_type) slots in [startDate, endDate) that still need a *fresh
+// order* — one unit per enabled meal type per day, minus any explicitly not_subscription AND
+// minus any freezer slot. Unlike the Calendar projection panel's demand figure (which counts
+// freezer slots too, since it separately nets them against tracked freezer-stock supply), this
+// is specifically "how much do I need to order" — a freezer slot is by definition meant to be
+// filled from stock already set aside, not from placing an order, so it doesn't belong in this
+// count at all. This replaced an earlier one-unit-per-day count that silently assumed a single
+// subscription meal a day regardless of how many meal types were enabled — inconsistent with
+// every other demand calculation in this app once more than one meal type is on subscription.
+// mealSlotsByDate maps date -> { meal_type: status }, sparse — a day/meal_type with no entry
+// defaults to 'subscription', same convention as everywhere else this is read.
 function countDemand(startDate, endDate, mealSlotsByDate, enabledMealTypes) {
   const totalDays = daysBetween(toDateOnly(startDate), toDateOnly(endDate))
   let demand = 0
@@ -17,10 +19,25 @@ function countDemand(startDate, endDate, mealSlotsByDate, enabledMealTypes) {
     const day = addDays(startDate, i)
     const daySlots = mealSlotsByDate[day] ?? {}
     for (const mealType of enabledMealTypes) {
-      if (daySlots[mealType] !== 'not_subscription') demand++
+      if (!['not_subscription', 'freezer'].includes(daySlots[mealType])) demand++
     }
   }
   return demand
+}
+
+// Same shape as countDemand, but counts slots explicitly at a given status — used to surface
+// how many freezer slots were excluded from the demand count above, for the order-need breakdown.
+function countByStatus(startDate, endDate, mealSlotsByDate, enabledMealTypes, status) {
+  const totalDays = daysBetween(toDateOnly(startDate), toDateOnly(endDate))
+  let count = 0
+  for (let i = 0; i < totalDays; i++) {
+    const day = addDays(startDate, i)
+    const daySlots = mealSlotsByDate[day] ?? {}
+    for (const mealType of enabledMealTypes) {
+      if (daySlots[mealType] === status) count++
+    }
+  }
+  return count
 }
 
 export function computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, scheduleConfig, today = todayStr()) {
@@ -34,16 +51,37 @@ export function computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, sched
   // called here because its offset is purely calendar-based, while nextDeliveryDate/
   // followingDeliveryDate can roll forward a week when this week's order-by cutoff has
   // already passed — the two would disagree on which delivery is "next" in that case.)
-  const mealsNeededUntilDelivery = countDemand(today, addDays(nextDeliveryDate, 1), mealSlotsByDate, enabledMealTypes)
-  const mealsNeededNextCycle = countDemand(addDays(nextDeliveryDate, 1), addDays(followingDeliveryDate, 1), mealSlotsByDate, enabledMealTypes)
+  const untilDeliveryStart = today
+  const untilDeliveryEnd = addDays(nextDeliveryDate, 1)
+  const nextCycleStart = addDays(nextDeliveryDate, 1)
+  const nextCycleEnd = addDays(followingDeliveryDate, 1)
+
+  const mealsNeededUntilDelivery = countDemand(untilDeliveryStart, untilDeliveryEnd, mealSlotsByDate, enabledMealTypes)
+  const mealsNeededNextCycle = countDemand(nextCycleStart, nextCycleEnd, mealSlotsByDate, enabledMealTypes)
 
   // A frozen meal is preserved past its original expiry_date, so it still counts as
-  // available stock even once that date has passed.
-  const stockAvailable = meals.filter((m) => !m.eaten && (m.frozen_at || m.expiry_date >= today)).length
+  // available stock even once that date has passed. Deep-frozen stock is excluded here: it can
+  // only ever fill a freezer slot (same pairing rule PUT /meal-slots/meal enforces), never a
+  // subscription one, so — now that freezer-slot demand is excluded above too — counting it
+  // would create a phantom "leftover" that isn't actually free to offset fresh-order demand;
+  // it's already spoken for by whichever freezer slot it's earmarked for.
+  const stockAvailable = meals.filter((m) => !m.eaten && m.freeze_type !== 'deep' && (m.frozen_at || m.expiry_date >= today)).length
 
   const shortfallBeforeDelivery = Math.max(0, mealsNeededUntilDelivery - stockAvailable)
   const leftoverAtDelivery = Math.max(0, stockAvailable - mealsNeededUntilDelivery)
   const suggestedOrderQty = Math.max(0, mealsNeededNextCycle - leftoverAtDelivery)
+
+  // Breakdown of how suggestedOrderQty was reached, for display: how much of next cycle's
+  // demand is already spoken for by stock left over from before delivery vs. how much still
+  // needs a fresh order, plus the freezer-slot count that was excluded from demand entirely
+  // (informational only — those are covered by stock set aside for the freezer, not an order).
+  const nextCycleFreezerSlotCount = countByStatus(nextCycleStart, nextCycleEnd, mealSlotsByDate, enabledMealTypes, 'freezer')
+  const nextCycleBreakdown = {
+    demand: mealsNeededNextCycle,
+    coveredByLeftoverStock: Math.min(mealsNeededNextCycle, leftoverAtDelivery),
+    needsFreshOrder: suggestedOrderQty,
+    freezerSlotCount: nextCycleFreezerSlotCount,
+  }
 
   return {
     mealsNeededUntilDelivery,
@@ -53,6 +91,7 @@ export function computeOrderNeed(meals, mealSlotsByDate, enabledMealTypes, sched
     leftoverAtDelivery,
     suggestedOrderQty,
     needToOrder: suggestedOrderQty > 0,
+    nextCycleBreakdown,
   }
 }
 
